@@ -3,6 +3,7 @@
 	import FormulaBar from './FormulaBar.svelte';
 	import SideRail from './SideRail.svelte';
 	import BottomBar from './BottomBar.svelte';
+	import SpreadsheetGrid from './SpreadsheetGrid.svelte';
 </script>
 
 <div class="workspace-shell">
@@ -21,9 +22,9 @@
 		<SideRail side="left" />
 	</div>
 
-	<!-- Grid Canvas Placeholder -->
-	<main class="grid-canvas" aria-label="Grid canvas placeholder">
-		<span class="label">Grid canvas</span>
+	<!-- Grid Canvas Region -->
+	<main class="grid-canvas" aria-label="Grid canvas">
+		<SpreadsheetGrid />
 	</main>
 
 	<!-- Right Rail -->
@@ -81,9 +82,7 @@
 	.grid-canvas {
 		grid-area: grid-canvas;
 		background-color: var(--color-surface);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+		overflow: hidden;
 	}
 
 	/* Right Rail Region */
@@ -99,14 +98,5 @@
 		display: flex;
 		align-items: stretch;
 		padding: 0 12px;
-	}
-
-	/* Shared Region labels */
-	.label {
-		font-size: 11px;
-		font-weight: 500;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 </style>

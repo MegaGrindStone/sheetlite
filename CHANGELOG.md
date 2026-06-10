@@ -21,3 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled menu bar, and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
 - Appearance mode support (system/light/dark) with localStorage persistence
+- SpreadsheetGrid component with CSS Grid layout, 40 sticky column headers
+  (A–AN), 100 sticky row headers (1–100), and active-cell selection styling
