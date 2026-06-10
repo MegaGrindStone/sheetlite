@@ -1,17 +1,70 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"reflect"
+	"testing"
+)
+
+func TestNewAppStartsWithNeutralState(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	assertNeutralAppState(t, app.State())
+
+	var startupApp App
+	startupApp.startup(context.Background())
+	assertNeutralAppState(t, startupApp.State())
+}
 
 func TestStateReturnsSnapshotCopy(t *testing.T) {
 	t.Parallel()
 
 	app := NewApp()
+	app.state.Workbook.Sheets[0].Cells = []CellData{{Ref: "B2", Row: 2, Column: 2, Value: "Original"}}
+	app.state.Workbook.Sheets[0].MergedCells = []MergedCellRange{{Range: a1Range(), Value: "Merged"}}
+	app.state.Workbook.Sheets[0].Columns = []ColumnLayout{{Index: 2, Name: "B", Width: 12.5}}
+	app.state.Workbook.Sheets[0].Rows = []RowLayout{{Index: 2, Height: 20}}
+	app.state.Workbook.Styles = []CellStyle{
+		{
+			ID:   1,
+			Fill: CellFillStyle{Colors: []string{"#FFFFFF"}},
+			Borders: []CellBorderStyle{
+				{Side: "left", Style: 1, Color: "#111111"},
+			},
+		},
+	}
+
 	state := app.State()
 	state.Workbook.Sheets[0].Name = "Mutated"
+	state.Workbook.Sheets[0].Cells[0].Value = "Mutated"
+	state.Workbook.Sheets[0].MergedCells[0].Value = "Mutated"
+	state.Workbook.Sheets[0].Columns[0].Width = 1
+	state.Workbook.Sheets[0].Rows[0].Height = 1
+	state.Workbook.Styles[0].Fill.Colors[0] = "#000000"
+	state.Workbook.Styles[0].Borders[0].Color = "#000000"
 
 	fresh := app.State()
 	if fresh.Workbook.Sheets[0].Name != defaultSheetName {
 		t.Fatalf("state snapshot mutation leaked into app state: %#v", fresh.Workbook.Sheets[0])
+	}
+	if fresh.Workbook.Sheets[0].Cells[0].Value != "Original" {
+		t.Fatalf("cell snapshot mutation leaked into app state: %#v", fresh.Workbook.Sheets[0].Cells[0])
+	}
+	if fresh.Workbook.Sheets[0].MergedCells[0].Value != "Merged" {
+		t.Fatalf("merged-cell snapshot mutation leaked into app state: %#v", fresh.Workbook.Sheets[0].MergedCells[0])
+	}
+	if fresh.Workbook.Sheets[0].Columns[0].Width != 12.5 {
+		t.Fatalf("column snapshot mutation leaked into app state: %#v", fresh.Workbook.Sheets[0].Columns[0])
+	}
+	if fresh.Workbook.Sheets[0].Rows[0].Height != 20 {
+		t.Fatalf("row snapshot mutation leaked into app state: %#v", fresh.Workbook.Sheets[0].Rows[0])
+	}
+	if fresh.Workbook.Styles[0].Fill.Colors[0] != "#FFFFFF" {
+		t.Fatalf("fill-color snapshot mutation leaked into app state: %#v", fresh.Workbook.Styles[0].Fill)
+	}
+	if fresh.Workbook.Styles[0].Borders[0].Color != "#111111" {
+		t.Fatalf("border snapshot mutation leaked into app state: %#v", fresh.Workbook.Styles[0].Borders[0])
 	}
 }
 
@@ -79,5 +132,51 @@ func TestInvalidViewCommandsSetErrorAndKeepView(t *testing.T) {
 	}
 	if invalidScroll.View != beforeScroll.View {
 		t.Fatalf("expected invalid scroll to keep view unchanged, got %#v", invalidScroll.View)
+	}
+}
+
+func assertNeutralAppState(t *testing.T, state AppState) {
+	t.Helper()
+
+	expectedSheet := WorkbookSheet{
+		Index:              defaultSheetIndex,
+		Name:               defaultSheetName,
+		State:              sheetStateVisible,
+		Visible:            true,
+		Bounds:             a1Range(),
+		DefaultColumnWidth: defaultColumnWidth,
+		DefaultRowHeight:   defaultRowHeight,
+		Cells:              []CellData{},
+		MergedCells:        []MergedCellRange{},
+		Columns:            []ColumnLayout{},
+		Rows:               []RowLayout{},
+	}
+	if state.Workbook.HasWorkbook {
+		t.Fatalf("expected neutral state to have no workbook, got %#v", state.Workbook)
+	}
+	if state.Workbook.Title != defaultWorkbookTitle || state.Workbook.FilePath != "" || state.Workbook.FileName != "" {
+		t.Fatalf("expected neutral workbook identity, got %#v", state.Workbook)
+	}
+	if !reflect.DeepEqual(state.Workbook.Sheets, []WorkbookSheet{expectedSheet}) {
+		t.Fatalf("expected neutral sheet list, got %#v", state.Workbook.Sheets)
+	}
+	if len(state.Workbook.Styles) != 0 {
+		t.Fatalf("expected neutral styles to be empty, got %#v", state.Workbook.Styles)
+	}
+
+	expectedView := WorkbookViewState{
+		ActiveSheetName: defaultSheetName,
+		ActiveCell:      CellAddress{Ref: "A1", Row: minExcelRow, Column: minExcelColumn},
+		Selection:       a1Range(),
+		ZoomPercent:     defaultZoomPercent,
+		Scroll:          ScrollPosition{TopRow: minExcelRow, LeftColumn: minExcelColumn},
+	}
+	if state.View != expectedView {
+		t.Fatalf("expected neutral view, got %#v", state.View)
+	}
+
+	expectedStatus := AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	if state.Status != expectedStatus {
+		t.Fatalf("expected ready neutral status, got %#v", state.Status)
 	}
 }
