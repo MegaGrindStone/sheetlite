@@ -1,3 +1,34 @@
+<script lang="ts">
+	import type { main } from '$lib/wailsjs/go/models';
+
+	type Props = {
+		workbook?: main.WorkbookState;
+		view?: main.WorkbookViewState;
+		status?: main.AppStatus;
+		onSetActiveSheet?: (sheetName: string) => Promise<void> | void;
+		onSetZoom?: (percent: number) => Promise<void> | void;
+	};
+
+	let { workbook, view, status, onSetActiveSheet, onSetZoom }: Props = $props();
+
+	const activeSheetName = $derived(
+		view?.activeSheetName || workbook?.sheets?.[0]?.name || 'Sheet 1'
+	);
+	const sheetCount = $derived(workbook?.sheets?.length || 1);
+	const sheetCommandWired = $derived(Boolean(onSetActiveSheet));
+	const zoomCommandWired = $derived(Boolean(onSetZoom));
+	const sheetTabTitle = $derived(
+		`${sheetCount} sheet${sheetCount === 1 ? '' : 's'} loaded; sheet switching ${sheetCommandWired ? 'is wired for later controls' : 'is inactive'}.`
+	);
+	const statusKind = $derived(status?.kind ?? 'ready');
+	const statusText = $derived(status?.message?.trim() || 'Ready');
+	const selectionRef = $derived(view?.selection?.ref || view?.activeCell?.ref || 'A1');
+	const zoomText = $derived(`${view?.zoomPercent ?? 100}%`);
+	const zoomTitle = $derived(
+		zoomCommandWired ? 'Zoom command is wired for later controls.' : 'Zoom controls are inactive.'
+	);
+</script>
+
 <div class="bottom-bar-inner">
 	<!-- Left: Add sheet & Sheet navigation/tabs -->
 	<div class="tabs-section">
@@ -31,10 +62,10 @@
 			<div
 				class="sheet-tab active"
 				aria-current="true"
-				aria-label="Active sheet: Sheet 1"
-				title="Active sheet: Sheet 1"
+				aria-label={`Active sheet: ${activeSheetName}`}
+				title={sheetTabTitle}
 			>
-				<span class="sheet-tab-text">Sheet 1</span>
+				<span class="sheet-tab-text">{activeSheetName}</span>
 				<div class="active-indicator"></div>
 			</div>
 		</div>
@@ -45,20 +76,24 @@
 
 	<!-- Right: Status / metrics readouts -->
 	<div class="status-section">
-		<div class="status-item ready" title="Ready status">
-			<span class="status-text">Ready</span>
+		<div
+			class="status-item ready"
+			title={`${statusKind}: ${statusText}`}
+			data-status-kind={statusKind}
+		>
+			<span class="status-text">{statusText}</span>
 		</div>
 
 		<div class="vertical-divider" aria-hidden="true"></div>
 
 		<div class="status-item selection" title="Active selection coordinate">
-			<span class="selection-text">A1</span>
+			<span class="selection-text">{selectionRef}</span>
 		</div>
 
 		<div class="vertical-divider" aria-hidden="true"></div>
 
-		<div class="status-item zoom" title="Zoom level">
-			<span class="zoom-text">100%</span>
+		<div class="status-item zoom" title={zoomTitle}>
+			<span class="zoom-text">{zoomText}</span>
 		</div>
 	</div>
 </div>

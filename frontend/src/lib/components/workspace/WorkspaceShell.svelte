@@ -1,20 +1,159 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
+	import {
+		OpenDroppedFiles,
+		OpenWorkbook,
+		SelectCell,
+		SetActiveSheet,
+		SetScrollPosition,
+		SetZoom,
+		State
+	} from '$lib/wailsjs/go/main/App';
+	import type { main } from '$lib/wailsjs/go/models';
+	import { OnFileDrop, OnFileDropOff } from '$lib/wailsjs/runtime/runtime';
 	import TopChrome from './TopChrome.svelte';
 	import FormulaBar from './FormulaBar.svelte';
 	import SideRail from './SideRail.svelte';
 	import BottomBar from './BottomBar.svelte';
 	import SpreadsheetGrid from './SpreadsheetGrid.svelte';
+
+	type StateCommand = () => Promise<main.AppState>;
+
+	let appState = $state<main.AppState | null>(null);
+	let isDragOver = $state(false);
+	let isMounted = false;
+	let dragDepth = 0;
+
+	const workbook = $derived(appState?.workbook);
+	const view = $derived(appState?.view);
+	const status = $derived(appState?.status);
+	const activeSheet = $derived(
+		workbook?.sheets?.find((sheet) => sheet.name === view?.activeSheetName) ?? workbook?.sheets?.[0]
+	);
+	const activeCell = $derived(
+		activeSheet?.cells?.find((cell) => cell.ref === view?.activeCell?.ref)
+	);
+
+	async function updateSnapshot(command: StateCommand): Promise<void> {
+		try {
+			const nextState = await command();
+			if (isMounted) {
+				appState = nextState;
+			}
+		} catch (error) {
+			console.warn('Wails state command failed.', error);
+		}
+	}
+
+	function openWorkbook(): Promise<void> {
+		return updateSnapshot(() => OpenWorkbook());
+	}
+
+	function selectCell(cellRef: string): Promise<void> {
+		return updateSnapshot(() => SelectCell(cellRef));
+	}
+
+	function setActiveSheet(sheetName: string): Promise<void> {
+		return updateSnapshot(() => SetActiveSheet(sheetName));
+	}
+
+	function setScrollPosition(topRow: number, leftColumn: number): Promise<void> {
+		return updateSnapshot(() => SetScrollPosition(topRow, leftColumn));
+	}
+
+	function setZoom(percent: number): Promise<void> {
+		return updateSnapshot(() => SetZoom(percent));
+	}
+
+	function resetDragState(): void {
+		dragDepth = 0;
+		isDragOver = false;
+	}
+
+	function handleDragEnter(event: DragEvent): void {
+		event.preventDefault();
+		dragDepth += 1;
+		isDragOver = true;
+	}
+
+	function handleDragOver(event: DragEvent): void {
+		event.preventDefault();
+		isDragOver = true;
+	}
+
+	function handleDragLeave(event: DragEvent): void {
+		event.preventDefault();
+		dragDepth = Math.max(0, dragDepth - 1);
+		if (dragDepth === 0) {
+			isDragOver = false;
+		}
+	}
+
+	function handleDomDrop(event: DragEvent): void {
+		event.preventDefault();
+		resetDragState();
+	}
+
+	function handleDroppedPaths(paths: string[]): void {
+		resetDragState();
+		void updateSnapshot(() => OpenDroppedFiles(paths));
+	}
+
+	const dragAffordance: Attachment<HTMLDivElement> = (node) => {
+		node.addEventListener('dragenter', handleDragEnter);
+		node.addEventListener('dragover', handleDragOver);
+		node.addEventListener('dragleave', handleDragLeave);
+		node.addEventListener('drop', handleDomDrop);
+
+		return () => {
+			node.removeEventListener('dragenter', handleDragEnter);
+			node.removeEventListener('dragover', handleDragOver);
+			node.removeEventListener('dragleave', handleDragLeave);
+			node.removeEventListener('drop', handleDomDrop);
+		};
+	};
+
+	onMount(() => {
+		isMounted = true;
+		void updateSnapshot(() => State());
+
+		let fileDropRegistered = false;
+		try {
+			OnFileDrop((_x, _y, paths) => handleDroppedPaths(paths), true);
+			fileDropRegistered = true;
+		} catch (error) {
+			console.warn('Wails file-drop handler is not available.', error);
+		}
+
+		return () => {
+			isMounted = false;
+			resetDragState();
+
+			if (fileDropRegistered) {
+				try {
+					OnFileDropOff();
+				} catch (error) {
+					console.warn('Wails file-drop cleanup failed.', error);
+				}
+			}
+		};
+	});
 </script>
 
-<div class="workspace-shell">
+<div
+	{@attach dragAffordance}
+	class="workspace-shell --wails-drop-target"
+	class:drag-over={isDragOver}
+>
 	<!-- Top Chrome -->
 	<header class="top-chrome" aria-label="Top chrome">
-		<TopChrome />
+		<TopChrome {workbook} {status} onOpenWorkbook={openWorkbook} />
 	</header>
 
 	<!-- Formula/Control Strip -->
 	<section class="formula-strip" aria-label="Formula bar">
-		<FormulaBar />
+		<FormulaBar {view} {activeCell} />
 	</section>
 
 	<!-- Left Rail -->
@@ -24,7 +163,14 @@
 
 	<!-- Grid Canvas Region -->
 	<main class="grid-canvas" aria-label="Grid canvas">
-		<SpreadsheetGrid />
+		<SpreadsheetGrid
+			{activeSheet}
+			{view}
+			styles={workbook?.styles ?? []}
+			dragActive={isDragOver}
+			onSelectCell={selectCell}
+			onSetScrollPosition={setScrollPosition}
+		/>
 	</main>
 
 	<!-- Right Rail -->
@@ -34,7 +180,7 @@
 
 	<!-- Bottom Bar -->
 	<footer class="bottom-bar" aria-label="Bottom bar">
-		<BottomBar />
+		<BottomBar {workbook} {view} {status} onSetActiveSheet={setActiveSheet} onSetZoom={setZoom} />
 	</footer>
 </div>
 

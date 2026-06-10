@@ -1,5 +1,23 @@
 <script lang="ts">
+	import type { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
+
+	type Props = {
+		workbook?: main.WorkbookState;
+		status?: main.AppStatus;
+		onOpenWorkbook?: () => Promise<void> | void;
+	};
+
+	let { workbook, status, onOpenWorkbook }: Props = $props();
+
+	const documentTitle = $derived(workbook?.title?.trim() || 'Untitled');
+	const statusKind = $derived(status?.kind ?? 'ready');
+	const statusMessage = $derived(status?.message?.trim() || 'Ready');
+	const statusLabel = $derived(status?.busy ? 'Opening…' : statusMessage);
+	const statusTitle = $derived(`${statusKind}: ${statusMessage}`);
+	const fileMenuTitle = $derived(
+		onOpenWorkbook ? 'File open command is wired for a later menu.' : 'File menu is inactive'
+	);
 </script>
 
 <div class="top-chrome-container">
@@ -17,9 +35,9 @@
 
 			<!-- Doc Title Block -->
 			<div class="title-block">
-				<span class="doc-title">Untitled</span>
+				<span class="doc-title">{documentTitle}</span>
 				<!-- Muted Status Affordance -->
-				<div class="status-affordance" title="Local draft">
+				<div class="status-affordance" title={statusTitle} data-status-kind={statusKind}>
 					<svg
 						class="status-icon"
 						width="6"
@@ -32,7 +50,7 @@
 					>
 						<circle cx="12" cy="12" r="12" />
 					</svg>
-					<span>Local draft</span>
+					<span>{statusLabel}</span>
 				</div>
 			</div>
 		</div>
@@ -48,7 +66,11 @@
 		<!-- Inactive Menus -->
 		<nav class="menu-bar" aria-label="Inactive main menu">
 			{#each ['File', 'Edit', 'View', 'Insert', 'Format', 'Data', 'Help'] as label (label)}
-				<span class="menu-item stub-disabled" aria-disabled="true" title="{label} menu is inactive">
+				<span
+					class="menu-item stub-disabled"
+					aria-disabled="true"
+					title={label === 'File' ? fileMenuTitle : `${label} menu is inactive`}
+				>
 					{label}
 				</span>
 			{/each}

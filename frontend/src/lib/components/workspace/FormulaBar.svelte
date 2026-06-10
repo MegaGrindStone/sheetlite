@@ -1,6 +1,30 @@
+<script lang="ts">
+	import type { main } from '$lib/wailsjs/go/models';
+
+	type Props = {
+		view?: main.WorkbookViewState;
+		activeCell?: main.CellData;
+	};
+
+	let { view, activeCell }: Props = $props();
+
+	const activeCellRef = $derived(view?.activeCell?.ref ?? 'A1');
+	const formulaTitle = $derived(
+		activeCell?.hasFormula
+			? `Formula editing is inactive for ${activeCellRef}.`
+			: `Formula bar for ${activeCellRef} is inactive.`
+	);
+</script>
+
 <div class="formula-bar" aria-label="Formula bar">
 	<!-- Name Box showing A1 -->
-	<div class="name-box" aria-label="Current cell reference" title="Current cell (A1)">A1</div>
+	<div
+		class="name-box"
+		aria-label="Current cell reference"
+		title={`Current cell (${activeCellRef})`}
+	>
+		{activeCellRef}
+	</div>
 
 	<!-- Split Divider -->
 	<div class="divider" aria-hidden="true"></div>
@@ -13,8 +37,8 @@
 		class="formula-display"
 		type="text"
 		disabled
-		aria-label="Formula bar input (inactive)"
-		title="Formula editing is inactive"
+		aria-label={`Formula bar input for ${activeCellRef} (inactive)`}
+		title={formulaTitle}
 	/>
 </div>
 

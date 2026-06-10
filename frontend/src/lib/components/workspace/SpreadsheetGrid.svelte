@@ -1,4 +1,24 @@
 <script lang="ts">
+	import type { main } from '$lib/wailsjs/go/models';
+
+	type Props = {
+		activeSheet?: main.WorkbookSheet;
+		view?: main.WorkbookViewState;
+		styles?: main.CellStyle[];
+		dragActive?: boolean;
+		onSelectCell?: (cellRef: string) => Promise<void> | void;
+		onSetScrollPosition?: (topRow: number, leftColumn: number) => Promise<void> | void;
+	};
+
+	let {
+		activeSheet,
+		view,
+		styles = [],
+		dragActive = false,
+		onSelectCell,
+		onSetScrollPosition
+	}: Props = $props();
+
 	// Helper to generate spreadsheet column labels (A, B, ..., Z, AA, AB, ..., AN)
 	function getColLabel(index: number): string {
 		let label = '';
@@ -10,6 +30,19 @@
 		return label;
 	}
 
+	const activeCellRef = $derived(view?.activeCell?.ref ?? 'A1');
+	const activeColumnLabel = $derived(getColLabel((view?.activeCell?.column ?? 1) - 1));
+	const activeRowIndex = $derived(view?.activeCell?.row ?? 1);
+	const activeSheetName = $derived(activeSheet?.name ?? 'Sheet 1');
+	const selectCommandWired = $derived(Boolean(onSelectCell));
+	const scrollCommandWired = $derived(Boolean(onSetScrollPosition));
+	const metadataLabel = $derived(
+		`${activeSheet?.cells?.length ?? 0} loaded cells and ${styles.length} styles are available for later grid rendering.`
+	);
+	const viewportLabel = $derived(
+		`Static spreadsheet preview for ${activeSheetName}; active cell ${activeCellRef}; editing is inactive.`
+	);
+
 	// Generate 40 column headers (A through AN)
 	const columns = Array.from({ length: 40 }, (_, i) => getColLabel(i));
 
@@ -19,16 +52,23 @@
 
 <div
 	class="spreadsheet-viewport"
+	class:drag-active={dragActive}
 	role="img"
-	aria-label="Static spreadsheet preview with cell A1 selected; editing is inactive."
+	aria-label={viewportLabel}
 >
-	<div class="grid-table" aria-hidden="true">
+	<div
+		class="grid-table"
+		aria-hidden="true"
+		title={metadataLabel}
+		data-select-command-wired={selectCommandWired}
+		data-scroll-command-wired={scrollCommandWired}
+	>
 		<!-- Top-left corner selector block -->
 		<div class="corner-header" aria-hidden="true"></div>
 
 		<!-- Column Headers A..AN -->
 		{#each columns as col (col)}
-			<div class="column-header" class:active={col === 'A'}>
+			<div class="column-header" class:active={col === activeColumnLabel}>
 				{col}
 			</div>
 		{/each}
@@ -36,15 +76,15 @@
 		<!-- Row Loop -->
 		{#each rows as row (row)}
 			<!-- Row Header -->
-			<div class="row-header" class:active={row === 1}>
+			<div class="row-header" class:active={row === activeRowIndex}>
 				{row}
 			</div>
 
 			<!-- Grid Cells for this row -->
 			{#each columns as col (col)}
-				{#if col === 'A' && row === 1}
-					<!-- Active A1 Selection Cell -->
-					<div class="grid-cell active-cell" data-cell-ref="A1"></div>
+				{#if `${col}${row}` === activeCellRef}
+					<!-- Active Selection Cell -->
+					<div class="grid-cell active-cell" data-cell-ref="{col}{row}"></div>
 				{:else}
 					<!-- Standard Blank Grid Cell -->
 					<div class="grid-cell" data-cell-ref="{col}{row}"></div>
@@ -62,6 +102,11 @@
 		overflow: auto;
 		background-color: var(--color-surface);
 		position: relative;
+	}
+
+	.spreadsheet-viewport.drag-active {
+		outline: 2px solid var(--color-selection-border);
+		outline-offset: -2px;
 	}
 
 	/* CSS Grid for perfect tabular spreadsheet alignment */

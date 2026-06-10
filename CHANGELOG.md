@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FormulaBar component with name box, visual divider, fx marker, and disabled
   formula display area, integrated into WorkspaceShell
 - Workspace shell with CSS Grid layout (top chrome, formula strip, left/right
-  rails, grid canvas, bottom bar)
+  rails, grid canvas, bottom bar) wiring all child components to Wails Go
+  backend bindings, with drag-and-drop file opening via Wails runtime handler
 - TopChrome component with brand mark, document title, status indicator,
   disabled menu bar, and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
