@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rails, grid canvas, bottom bar) wiring all child components to Wails Go
   backend bindings, with drag-and-drop file opening via Wails runtime handler
 - TopChrome component with brand mark, document title, status indicator,
-  disabled menu bar, and disabled toolbar groups with SVG icons
+  functional File menu popover for opening workbooks, disabled stub menu
+  items (Edit, View, etc.), and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
 - Appearance mode support (system/light/dark) with localStorage persistence
 - SpreadsheetGrid component with CSS Grid layout, 40 sticky column headers

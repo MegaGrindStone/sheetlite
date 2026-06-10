@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Attachment } from 'svelte/attachments';
 	import type { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
 
@@ -9,15 +10,79 @@
 	};
 
 	let { workbook, status, onOpenWorkbook }: Props = $props();
+	let fileMenuOpen = $state(false);
+	let openingWorkbook = $state(false);
 
 	const documentTitle = $derived(workbook?.title?.trim() || 'Untitled');
 	const statusKind = $derived(status?.kind ?? 'ready');
 	const statusMessage = $derived(status?.message?.trim() || 'Ready');
 	const statusLabel = $derived(status?.busy ? 'Opening…' : statusMessage);
 	const statusTitle = $derived(`${statusKind}: ${statusMessage}`);
+	const commandBusy = $derived(Boolean(status?.busy) || openingWorkbook);
+	const canOpenWorkbook = $derived(Boolean(onOpenWorkbook) && !commandBusy);
+	const showFileMenu = $derived(fileMenuOpen && canOpenWorkbook);
 	const fileMenuTitle = $derived(
-		onOpenWorkbook ? 'File open command is wired for a later menu.' : 'File menu is inactive'
+		!onOpenWorkbook
+			? 'File menu is unavailable'
+			: commandBusy
+				? 'Workbook open is already in progress'
+				: 'Open File menu'
 	);
+	const openWorkbookLabel = $derived(commandBusy ? 'Opening…' : 'Open');
+
+	function closeFileMenu(): void {
+		fileMenuOpen = false;
+	}
+
+	function toggleFileMenu(): void {
+		if (!canOpenWorkbook) {
+			return;
+		}
+
+		fileMenuOpen = !showFileMenu;
+	}
+
+	async function handleOpenWorkbook(): Promise<void> {
+		if (!onOpenWorkbook || commandBusy) {
+			return;
+		}
+
+		closeFileMenu();
+		openingWorkbook = true;
+
+		try {
+			await onOpenWorkbook();
+		} finally {
+			openingWorkbook = false;
+		}
+	}
+
+	const fileMenuBehavior: Attachment<HTMLDivElement> = (node) => {
+		function handleKeydown(event: KeyboardEvent): void {
+			if (event.key !== 'Escape' || !showFileMenu) {
+				return;
+			}
+
+			event.stopPropagation();
+			closeFileMenu();
+		}
+
+		function handleDocumentPointerDown(event: PointerEvent): void {
+			if (!showFileMenu || !(event.target instanceof Node) || node.contains(event.target)) {
+				return;
+			}
+
+			closeFileMenu();
+		}
+
+		node.addEventListener('keydown', handleKeydown);
+		document.addEventListener('pointerdown', handleDocumentPointerDown);
+
+		return () => {
+			node.removeEventListener('keydown', handleKeydown);
+			document.removeEventListener('pointerdown', handleDocumentPointerDown);
+		};
+	};
 </script>
 
 <div class="top-chrome-container">
@@ -63,13 +128,44 @@
 
 	<!-- Bottom Row: Inactive Menus & Compact Disabled Toolbar Groups -->
 	<div class="bottom-row">
-		<!-- Inactive Menus -->
-		<nav class="menu-bar" aria-label="Inactive main menu">
-			{#each ['File', 'Edit', 'View', 'Insert', 'Format', 'Data', 'Help'] as label (label)}
+		<!-- Main Menus -->
+		<nav class="menu-bar" aria-label="Main menu">
+			<div {@attach fileMenuBehavior} class="file-menu-shell">
+				<button
+					type="button"
+					class="menu-item file-menu-trigger"
+					class:open={showFileMenu}
+					aria-haspopup="true"
+					aria-expanded={showFileMenu}
+					aria-controls="file-menu-popover"
+					disabled={!canOpenWorkbook}
+					title={fileMenuTitle}
+					onclick={toggleFileMenu}
+				>
+					File
+				</button>
+
+				{#if showFileMenu}
+					<div id="file-menu-popover" class="file-menu-popover" aria-label="File menu">
+						<button
+							type="button"
+							class="file-menu-command"
+							disabled={!canOpenWorkbook}
+							onclick={handleOpenWorkbook}
+						>
+							<span class="file-menu-command-label">{openWorkbookLabel}</span>
+							<span class="file-menu-command-meta">Excel workbook</span>
+						</button>
+					</div>
+				{/if}
+			</div>
+
+			{#each ['Edit', 'View', 'Insert', 'Format', 'Data', 'Help'] as label (label)}
 				<span
-					class="menu-item stub-disabled"
+					class="menu-item menu-stub stub-disabled"
 					aria-disabled="true"
-					title={label === 'File' ? fileMenuTitle : `${label} menu is inactive`}
+					tabindex="-1"
+					title={`${label} menu is inactive`}
 				>
 					{label}
 				</span>
@@ -234,6 +330,8 @@
 
 <style>
 	.top-chrome-container {
+		position: relative;
+		z-index: 2;
 		display: flex;
 		flex-direction: column;
 		width: 100%;
@@ -336,18 +434,87 @@
 	.menu-bar {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 8px;
+	}
+
+	.file-menu-shell {
+		position: relative;
+		display: flex;
+		align-items: center;
 	}
 
 	.menu-item {
-		color: var(--color-disabled-text);
+		color: var(--color-text-muted);
 		font-size: 12px;
 		font-weight: 400;
 		line-height: 1;
-		cursor: default;
 		user-select: none;
 		padding: 2px 4px;
 		border-radius: 2px;
+	}
+
+	.file-menu-trigger {
+		cursor: pointer;
+		background-color: transparent;
+	}
+
+	.file-menu-trigger:not(:disabled):hover,
+	.file-menu-trigger.open {
+		background-color: var(--color-surface-hover);
+		color: var(--color-text);
+	}
+
+	.file-menu-trigger:focus-visible,
+	.file-menu-command:focus-visible {
+		outline: 2px solid var(--color-focus-ring);
+		outline-offset: -1px;
+	}
+
+	.menu-stub {
+		cursor: default;
+	}
+
+	.file-menu-popover {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		z-index: 20;
+		min-width: 192px;
+		padding: 4px;
+		border: 1px solid var(--color-border);
+		border-radius: 2px;
+		background-color: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	.file-menu-command {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		width: 100%;
+		min-height: 28px;
+		padding: 6px 8px;
+		border-radius: 2px;
+		background-color: transparent;
+		color: var(--color-text);
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.file-menu-command:not(:disabled):hover {
+		background-color: var(--color-surface-hover);
+	}
+
+	.file-menu-command-label {
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.file-menu-command-meta {
+		color: var(--color-text-muted);
+		font-size: 11px;
+		white-space: nowrap;
 	}
 
 	.toolbar-divider {
