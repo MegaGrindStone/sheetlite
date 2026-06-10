@@ -1,3 +1,9 @@
 build/bin
 node_modules
-frontend/dist
+frontend/build
+
+# AI artifacts
+.todo
+chat.txt
+docs/discussions
+docs/plans
