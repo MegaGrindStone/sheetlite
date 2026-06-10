@@ -10,6 +10,16 @@
 		onSetScrollPosition?: (topRow: number, leftColumn: number) => Promise<void> | void;
 	};
 
+	type ColumnHeader = {
+		index: number;
+		label: string;
+	};
+
+	type CellLookup = Record<string, main.CellData>;
+
+	const MIN_COLUMN_COUNT = 40;
+	const MIN_ROW_COUNT = 100;
+
 	let {
 		activeSheet,
 		view,
@@ -30,24 +40,112 @@
 		return label;
 	}
 
+	function maxPositiveIndex(current: number, value: number | undefined): number {
+		if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
+			return current;
+		}
+
+		return Math.max(current, Math.trunc(value));
+	}
+
+	function getColumnCount(
+		sheet: main.WorkbookSheet | undefined,
+		stateView: main.WorkbookViewState | undefined
+	): number {
+		let count = MIN_COLUMN_COUNT;
+		count = maxPositiveIndex(count, sheet?.bounds?.end?.column);
+		count = maxPositiveIndex(count, stateView?.activeCell?.column);
+		count = maxPositiveIndex(count, stateView?.selection?.start?.column);
+		count = maxPositiveIndex(count, stateView?.selection?.end?.column);
+
+		for (const cell of sheet?.cells ?? []) {
+			count = maxPositiveIndex(count, cell.column);
+		}
+
+		for (const column of sheet?.columns ?? []) {
+			count = maxPositiveIndex(count, column.index);
+		}
+
+		return count;
+	}
+
+	function getRowCount(
+		sheet: main.WorkbookSheet | undefined,
+		stateView: main.WorkbookViewState | undefined
+	): number {
+		let count = MIN_ROW_COUNT;
+		count = maxPositiveIndex(count, sheet?.bounds?.end?.row);
+		count = maxPositiveIndex(count, stateView?.activeCell?.row);
+		count = maxPositiveIndex(count, stateView?.selection?.start?.row);
+		count = maxPositiveIndex(count, stateView?.selection?.end?.row);
+
+		for (const cell of sheet?.cells ?? []) {
+			count = maxPositiveIndex(count, cell.row);
+		}
+
+		for (const row of sheet?.rows ?? []) {
+			count = maxPositiveIndex(count, row.index);
+		}
+
+		return count;
+	}
+
+	function createColumns(count: number): ColumnHeader[] {
+		return Array.from({ length: count }, (_, index) => ({
+			index: index + 1,
+			label: getColLabel(index)
+		}));
+	}
+
+	function createRows(count: number): number[] {
+		return Array.from({ length: count }, (_, index) => index + 1);
+	}
+
+	function createCellLookup(sheet: main.WorkbookSheet | undefined): CellLookup {
+		const lookup: CellLookup = {};
+
+		for (const cell of sheet?.cells ?? []) {
+			if (cell.ref) {
+				lookup[cell.ref] = cell;
+			}
+		}
+
+		return lookup;
+	}
+
+	function getCellTitle(ref: string, cell: main.CellData | undefined): string | undefined {
+		if (!cell) {
+			return undefined;
+		}
+
+		if (cell.value) {
+			return `${ref}: ${cell.value}`;
+		}
+
+		if (cell.hasFormula) {
+			return `${ref}: formula cell`;
+		}
+
+		return ref;
+	}
+
 	const activeCellRef = $derived(view?.activeCell?.ref ?? 'A1');
 	const activeColumnLabel = $derived(getColLabel((view?.activeCell?.column ?? 1) - 1));
 	const activeRowIndex = $derived(view?.activeCell?.row ?? 1);
 	const activeSheetName = $derived(activeSheet?.name ?? 'Sheet 1');
+	const columnCount = $derived(getColumnCount(activeSheet, view));
+	const rowCount = $derived(getRowCount(activeSheet, view));
+	const columns = $derived(createColumns(columnCount));
+	const rows = $derived(createRows(rowCount));
+	const cellsByRef = $derived(createCellLookup(activeSheet));
 	const selectCommandWired = $derived(Boolean(onSelectCell));
 	const scrollCommandWired = $derived(Boolean(onSetScrollPosition));
 	const metadataLabel = $derived(
-		`${activeSheet?.cells?.length ?? 0} loaded cells and ${styles.length} styles are available for later grid rendering.`
+		`${activeSheet?.cells?.length ?? 0} loaded cells rendered across ${rowCount} rows and ${columnCount} columns. ${styles.length} styles are available for later grid rendering.`
 	);
 	const viewportLabel = $derived(
-		`Static spreadsheet preview for ${activeSheetName}; active cell ${activeCellRef}; editing is inactive.`
+		`Spreadsheet grid for ${activeSheetName}; active cell ${activeCellRef}; displayed workbook values are rendered when loaded.`
 	);
-
-	// Generate 40 column headers (A through AN)
-	const columns = Array.from({ length: 40 }, (_, i) => getColLabel(i));
-
-	// Generate 100 row headers (1 through 100)
-	const rows = Array.from({ length: 100 }, (_, i) => i + 1);
 </script>
 
 <div
@@ -62,14 +160,15 @@
 		title={metadataLabel}
 		data-select-command-wired={selectCommandWired}
 		data-scroll-command-wired={scrollCommandWired}
+		style={`--column-count: ${columnCount};`}
 	>
 		<!-- Top-left corner selector block -->
 		<div class="corner-header" aria-hidden="true"></div>
 
-		<!-- Column Headers A..AN -->
-		{#each columns as col (col)}
-			<div class="column-header" class:active={col === activeColumnLabel}>
-				{col}
+		<!-- Column Headers -->
+		{#each columns as column (column.index)}
+			<div class="column-header" class:active={column.label === activeColumnLabel}>
+				{column.label}
 			</div>
 		{/each}
 
@@ -81,14 +180,21 @@
 			</div>
 
 			<!-- Grid Cells for this row -->
-			{#each columns as col (col)}
-				{#if `${col}${row}` === activeCellRef}
-					<!-- Active Selection Cell -->
-					<div class="grid-cell active-cell" data-cell-ref="{col}{row}"></div>
-				{:else}
-					<!-- Standard Blank Grid Cell -->
-					<div class="grid-cell" data-cell-ref="{col}{row}"></div>
-				{/if}
+			{#each columns as column (column.index)}
+				{@const ref = `${column.label}${row}`}
+				{@const cell = cellsByRef[ref]}
+				<div
+					class="grid-cell"
+					class:active-cell={ref === activeCellRef}
+					class:has-value={Boolean(cell?.value)}
+					data-cell-ref={ref}
+					data-cell-kind={cell?.kind}
+					title={getCellTitle(ref, cell)}
+				>
+					{#if cell?.value}
+						<span class="cell-value">{cell.value}</span>
+					{/if}
+				</div>
 			{/each}
 		{/each}
 	</div>
@@ -116,7 +222,7 @@
 		--row-height: 24px;
 
 		display: grid;
-		grid-template-columns: var(--row-header-width) repeat(40, var(--column-width));
+		grid-template-columns: var(--row-header-width) repeat(var(--column-count), var(--column-width));
 		grid-auto-rows: var(--row-height);
 		width: max-content;
 		position: relative;
@@ -199,6 +305,24 @@
 		border-right: 1px solid var(--color-gridline);
 		border-bottom: 1px solid var(--color-gridline);
 		box-sizing: border-box;
+		color: var(--color-text);
+		display: flex;
+		align-items: center;
+		min-width: 0;
+		overflow: hidden;
+		padding: 0 6px;
+		white-space: nowrap;
+	}
+
+	.grid-cell.has-value {
+		user-select: text;
+	}
+
+	.cell-value {
+		display: block;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* Active selection styling (A1 cell) using inset box shadow for crisp non-shifting layout */
