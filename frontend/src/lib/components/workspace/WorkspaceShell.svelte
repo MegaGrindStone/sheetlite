@@ -2,6 +2,7 @@
 	import TopChrome from './TopChrome.svelte';
 	import FormulaBar from './FormulaBar.svelte';
 	import SideRail from './SideRail.svelte';
+	import BottomBar from './BottomBar.svelte';
 </script>
 
 <div class="workspace-shell">
@@ -30,9 +31,9 @@
 		<SideRail side="right" />
 	</div>
 
-	<!-- Bottom Bar Placeholder -->
-	<footer class="bottom-bar" aria-label="Bottom bar placeholder">
-		<span class="label">Bottom bar</span>
+	<!-- Bottom Bar -->
+	<footer class="bottom-bar" aria-label="Bottom bar">
+		<BottomBar />
 	</footer>
 </div>
 
@@ -45,7 +46,7 @@
 			'formula-strip formula-strip formula-strip'
 			'left-rail grid-canvas right-rail'
 			'bottom-bar bottom-bar bottom-bar';
-		grid-template-rows: 64px 32px minmax(0, 1fr) 32px;
+		grid-template-rows: 64px 32px minmax(0, 1fr) 36px;
 		grid-template-columns: 48px 1fr 48px;
 		width: 100vw;
 		height: 100vh;
@@ -96,7 +97,7 @@
 		background-color: var(--color-chrome);
 		border-top: 1px solid var(--color-border);
 		display: flex;
-		align-items: center;
+		align-items: stretch;
 		padding: 0 12px;
 	}
 

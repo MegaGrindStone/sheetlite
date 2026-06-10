@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- BottomBar component with add-sheet button, sheet tabs, and status readouts
+  (Ready, A1, 100%)
 - SideRail component with disabled icon buttons for collapsed left and right
   workspace rails
 - FormulaBar component with name box, visual divider, fx marker, and disabled
