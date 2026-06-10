@@ -5,18 +5,17 @@
 	<!-- Split Divider -->
 	<div class="divider" aria-hidden="true"></div>
 
-	<!-- fx marker -->
-	<div class="fx-marker" aria-hidden="true" title="Insert function (inactive)">fx</div>
+	<!-- Static fx marker for the future formula controls -->
+	<div class="fx-marker" aria-hidden="true">fx</div>
 
-	<!-- Inactive formula display/input-like area -->
-	<div
+	<!-- Disabled formula input: visible shell only, not editable yet -->
+	<input
 		class="formula-display"
+		type="text"
+		disabled
 		aria-label="Formula bar input (inactive)"
-		title="Formula editing is currently inactive"
-		aria-disabled="true"
-	>
-		<!-- Static placeholder to honestly convey the bar is inactive -->
-	</div>
+		title="Formula editing is inactive"
+	/>
 </div>
 
 <style>
@@ -63,10 +62,10 @@
 		width: 20px;
 		height: 22px;
 		font-family: 'Times New Roman', Georgia, serif;
+		font-size: 14px;
 		font-style: italic;
 		font-weight: 600;
-		font-size: 14px;
-		color: var(--color-text-muted);
+		color: var(--color-disabled-text);
 		user-select: none;
 		flex-shrink: 0;
 	}
@@ -76,7 +75,8 @@
 		height: 22px;
 		background-color: var(--color-disabled-bg);
 		border: 1px solid var(--color-border);
-		cursor: not-allowed;
+		color: var(--color-disabled-text);
+		cursor: default;
 		box-sizing: border-box;
 	}
 </style>

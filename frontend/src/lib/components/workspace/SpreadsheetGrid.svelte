@@ -17,14 +17,18 @@
 	const rows = Array.from({ length: 100 }, (_, i) => i + 1);
 </script>
 
-<div class="spreadsheet-viewport" tabindex="-1" aria-label="Spreadsheet grid">
-	<div class="grid-table">
+<div
+	class="spreadsheet-viewport"
+	role="img"
+	aria-label="Static spreadsheet preview with cell A1 selected; editing is inactive."
+>
+	<div class="grid-table" aria-hidden="true">
 		<!-- Top-left corner selector block -->
 		<div class="corner-header" aria-hidden="true"></div>
 
 		<!-- Column Headers A..AN -->
 		{#each columns as col (col)}
-			<div class="column-header" class:active={col === 'A'} aria-label="Column {col}">
+			<div class="column-header" class:active={col === 'A'}>
 				{col}
 			</div>
 		{/each}
@@ -32,7 +36,7 @@
 		<!-- Row Loop -->
 		{#each rows as row (row)}
 			<!-- Row Header -->
-			<div class="row-header" class:active={row === 1} aria-label="Row {row}">
+			<div class="row-header" class:active={row === 1}>
 				{row}
 			</div>
 
@@ -40,18 +44,10 @@
 			{#each columns as col (col)}
 				{#if col === 'A' && row === 1}
 					<!-- Active A1 Selection Cell -->
-					<div
-						class="grid-cell active-cell"
-						data-cell-ref="A1"
-						aria-label="Cell A1, selected"
-					></div>
+					<div class="grid-cell active-cell" data-cell-ref="A1"></div>
 				{:else}
 					<!-- Standard Blank Grid Cell -->
-					<div
-						class="grid-cell"
-						data-cell-ref="{col}{row}"
-						aria-label="Cell {col}{row}, empty"
-					></div>
+					<div class="grid-cell" data-cell-ref="{col}{row}"></div>
 				{/if}
 			{/each}
 		{/each}
@@ -65,7 +61,6 @@
 		height: 100%;
 		overflow: auto;
 		background-color: var(--color-surface);
-		outline: none;
 		position: relative;
 	}
 

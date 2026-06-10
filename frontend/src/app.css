@@ -160,7 +160,7 @@ body {
 /* Universal Focus Styling for Keyboard Accessibility */
 :focus-visible {
 	outline: 2px solid var(--color-focus-ring);
-	outline-offset: -2px;
+	outline-offset: 2px;
 }
 
 /* Form element resets to avoid default browser chrome styling interference */
@@ -179,9 +179,17 @@ textarea {
 
 /* Inactive / Stub states generic visual markers */
 .stub-disabled,
+[aria-disabled='true'],
 [disabled] {
 	color: var(--color-disabled-text) !important;
 	cursor: default !important;
 	pointer-events: none !important;
-	opacity: 0.6;
+	opacity: 0.62;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+	background-color: var(--color-disabled-bg);
 }

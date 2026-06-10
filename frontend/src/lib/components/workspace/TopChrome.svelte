@@ -28,6 +28,7 @@
 						fill="currentColor"
 						stroke="none"
 						aria-hidden="true"
+						focusable="false"
 					>
 						<circle cx="12" cy="12" r="12" />
 					</svg>
@@ -45,9 +46,9 @@
 	<!-- Bottom Row: Inactive Menus & Compact Disabled Toolbar Groups -->
 	<div class="bottom-row">
 		<!-- Inactive Menus -->
-		<nav class="menu-bar" aria-label="Main menu">
+		<nav class="menu-bar" aria-label="Inactive main menu">
 			{#each ['File', 'Edit', 'View', 'Insert', 'Format', 'Data', 'Help'] as label (label)}
-				<span class="menu-item" aria-disabled="true">
+				<span class="menu-item stub-disabled" aria-disabled="true" title="{label} menu is inactive">
 					{label}
 				</span>
 			{/each}
@@ -57,10 +58,10 @@
 		<div class="toolbar-divider" aria-hidden="true"></div>
 
 		<!-- Disabled Toolbar Groups -->
-		<div class="toolbar" aria-label="Toolbar controls">
+		<div class="toolbar" aria-label="Inactive toolbar controls">
 			<!-- Undo/Redo Group -->
 			<div class="toolbar-group">
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Undo">
+				<button class="toolbar-btn" disabled aria-label="Undo">
 					<svg
 						width="14"
 						height="14"
@@ -70,12 +71,14 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<path d="M3 7v6h6" />
 						<path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
 					</svg>
 				</button>
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Redo">
+				<button class="toolbar-btn" disabled aria-label="Redo">
 					<svg
 						width="14"
 						height="14"
@@ -85,6 +88,8 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<path d="M21 7v6h-6" />
 						<path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
@@ -96,20 +101,16 @@
 
 			<!-- Text Styling Group -->
 			<div class="toolbar-group">
-				<button class="toolbar-btn bold-btn" disabled tabindex="-1" aria-label="Bold"> B </button>
-				<button class="toolbar-btn italic-btn" disabled tabindex="-1" aria-label="Italic">
-					I
-				</button>
-				<button class="toolbar-btn strike-btn" disabled tabindex="-1" aria-label="Strikethrough">
-					S
-				</button>
+				<button class="toolbar-btn bold-btn" disabled aria-label="Bold"> B </button>
+				<button class="toolbar-btn italic-btn" disabled aria-label="Italic"> I </button>
+				<button class="toolbar-btn strike-btn" disabled aria-label="Strikethrough"> S </button>
 			</div>
 
 			<div class="toolbar-divider" aria-hidden="true"></div>
 
 			<!-- Grid/Cell Formatting Group -->
 			<div class="toolbar-group">
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Borders">
+				<button class="toolbar-btn" disabled aria-label="Borders">
 					<svg
 						width="14"
 						height="14"
@@ -119,13 +120,15 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<rect x="3" y="3" width="18" height="18" rx="0" />
 						<line x1="12" y1="3" x2="12" y2="21" />
 						<line x1="3" y1="12" x2="21" y2="12" />
 					</svg>
 				</button>
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Merge Cells">
+				<button class="toolbar-btn" disabled aria-label="Merge Cells">
 					<svg
 						width="14"
 						height="14"
@@ -135,6 +138,8 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<rect x="3" y="3" width="18" height="18" rx="0" />
 						<line x1="3" y1="12" x2="9" y2="12" />
@@ -149,7 +154,7 @@
 
 			<!-- Alignment Group -->
 			<div class="toolbar-group">
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Align Left">
+				<button class="toolbar-btn" disabled aria-label="Align Left">
 					<svg
 						width="14"
 						height="14"
@@ -158,13 +163,15 @@
 						stroke="currentColor"
 						stroke-width="2"
 						stroke-linecap="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<line x1="3" y1="6" x2="21" y2="6" />
 						<line x1="3" y1="12" x2="17" y2="12" />
 						<line x1="3" y1="18" x2="21" y2="18" />
 					</svg>
 				</button>
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Align Center">
+				<button class="toolbar-btn" disabled aria-label="Align Center">
 					<svg
 						width="14"
 						height="14"
@@ -173,13 +180,15 @@
 						stroke="currentColor"
 						stroke-width="2"
 						stroke-linecap="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<line x1="3" y1="6" x2="21" y2="6" />
 						<line x1="6" y1="12" x2="18" y2="12" />
 						<line x1="3" y1="18" x2="21" y2="18" />
 					</svg>
 				</button>
-				<button class="toolbar-btn" disabled tabindex="-1" aria-label="Align Right">
+				<button class="toolbar-btn" disabled aria-label="Align Right">
 					<svg
 						width="14"
 						height="14"
@@ -188,6 +197,8 @@
 						stroke="currentColor"
 						stroke-width="2"
 						stroke-linecap="round"
+						aria-hidden="true"
+						focusable="false"
 					>
 						<line x1="3" y1="6" x2="21" y2="6" />
 						<line x1="7" y1="12" x2="21" y2="12" />

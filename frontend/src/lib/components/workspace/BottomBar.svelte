@@ -1,7 +1,12 @@
 <div class="bottom-bar-inner">
 	<!-- Left: Add sheet & Sheet navigation/tabs -->
 	<div class="tabs-section">
-		<button class="add-sheet-btn" disabled tabindex="-1" aria-label="Add sheet" title="Add sheet">
+		<button
+			class="add-sheet-btn"
+			disabled
+			aria-label="Add sheet (inactive)"
+			title="Add sheet (inactive)"
+		>
 			<svg
 				width="14"
 				height="14"
@@ -22,8 +27,13 @@
 		<div class="vertical-divider" aria-hidden="true"></div>
 
 		<!-- Sheet tab area -->
-		<div class="sheet-tabs" aria-label="Sheets">
-			<div class="sheet-tab active" aria-current="true" title="Sheet 1">
+		<div class="sheet-tabs" aria-label="Sheets (static)">
+			<div
+				class="sheet-tab active"
+				aria-current="true"
+				aria-label="Active sheet: Sheet 1"
+				title="Active sheet: Sheet 1"
+			>
 				<span class="sheet-tab-text">Sheet 1</span>
 				<div class="active-indicator"></div>
 			</div>
