@@ -1,7 +1,11 @@
+<script lang="ts">
+	import TopChrome from './TopChrome.svelte';
+</script>
+
 <div class="workspace-shell">
-	<!-- Top Chrome Placeholder -->
-	<header class="top-chrome" aria-label="Top chrome placeholder">
-		<span class="label">Top chrome (Untitled workspace)</span>
+	<!-- Top Chrome -->
+	<header class="top-chrome" aria-label="Top chrome">
+		<TopChrome />
 	</header>
 
 	<!-- Formula/Control Strip Placeholder -->
@@ -39,7 +43,7 @@
 			'formula-strip formula-strip formula-strip'
 			'left-rail grid-canvas right-rail'
 			'bottom-bar bottom-bar bottom-bar';
-		grid-template-rows: 36px 32px minmax(0, 1fr) 32px;
+		grid-template-rows: 64px 32px minmax(0, 1fr) 32px;
 		grid-template-columns: 48px 1fr 48px;
 		width: 100vw;
 		height: 100vh;
@@ -54,9 +58,6 @@
 		grid-area: top-chrome;
 		background-color: var(--color-chrome);
 		border-bottom: 1px solid var(--color-border);
-		display: flex;
-		align-items: center;
-		padding: 0 12px;
 	}
 
 	/* Formula/Control Strip Region */
