@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SideRail component with disabled icon buttons for collapsed left and right
+  workspace rails
 - FormulaBar component with name box, visual divider, fx marker, and disabled
   formula display area, integrated into WorkspaceShell
 - Workspace shell with CSS Grid layout (top chrome, formula strip, left/right

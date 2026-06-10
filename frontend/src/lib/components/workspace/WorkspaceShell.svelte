@@ -1,6 +1,7 @@
 <script lang="ts">
 	import TopChrome from './TopChrome.svelte';
 	import FormulaBar from './FormulaBar.svelte';
+	import SideRail from './SideRail.svelte';
 </script>
 
 <div class="workspace-shell">
@@ -14,20 +15,20 @@
 		<FormulaBar />
 	</section>
 
-	<!-- Left Rail Placeholder -->
-	<aside class="left-rail" aria-label="Left rail placeholder">
-		<span class="label vertical">Left rail</span>
-	</aside>
+	<!-- Left Rail -->
+	<div class="left-rail-container">
+		<SideRail side="left" />
+	</div>
 
 	<!-- Grid Canvas Placeholder -->
 	<main class="grid-canvas" aria-label="Grid canvas placeholder">
 		<span class="label">Grid canvas</span>
 	</main>
 
-	<!-- Right Rail Placeholder -->
-	<aside class="right-rail" aria-label="Right rail placeholder">
-		<span class="label vertical">Right rail</span>
-	</aside>
+	<!-- Right Rail -->
+	<div class="right-rail-container">
+		<SideRail side="right" />
+	</div>
 
 	<!-- Bottom Bar Placeholder -->
 	<footer class="bottom-bar" aria-label="Bottom bar placeholder">
@@ -71,14 +72,8 @@
 	}
 
 	/* Left Rail Region */
-	.left-rail {
+	.left-rail-container {
 		grid-area: left-rail;
-		background-color: var(--color-chrome);
-		border-right: 1px solid var(--color-border);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
 	}
 
 	/* Spreadsheet Grid Canvas Region */
@@ -91,14 +86,8 @@
 	}
 
 	/* Right Rail Region */
-	.right-rail {
+	.right-rail-container {
 		grid-area: right-rail;
-		background-color: var(--color-chrome);
-		border-left: 1px solid var(--color-border);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
 	}
 
 	/* Bottom Bar Region */
@@ -118,12 +107,5 @@
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-	}
-
-	/* Vertical labels for narrow vertical rails */
-	.vertical {
-		writing-mode: vertical-rl;
-		transform: rotate(180deg);
-		white-space: nowrap;
 	}
 </style>

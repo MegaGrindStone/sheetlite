@@ -128,7 +128,7 @@ Sheetlite is a lightweight, spreadsheet-first desktop workspace built on Svelte 
 The visual tone is professional, technical, minimal, and highly functional:
 
 - **Spreadsheet-first**: Emphasizes structural clarity and grid readability.
-- **Dense and compact chrome**: Controls, rails, and formula bar occupy minimal vertical and horizontal space to maximize the visible grid viewport.
+- **Dense and compact chrome**: Controls, collapsed side rails, and formula bar occupy minimal vertical and horizontal space to maximize the visible grid viewport.
 - **Honest stub states**: Unfinished interactive controls are clearly styled as disabled, preventing fake behavior or confusing placeholders.
 
 ## Colors
@@ -174,7 +174,10 @@ Sheetlite enforces a single-window desktop workspace shell that fits exactly int
 - **Base Layout Grid**: Fits the viewport height exactly and avoids page-level overflow (`overflow: hidden` on root).
 - **Chrome Sizing**:
   - Top Chrome: Combined workspace title, menu/toolbar, and formula strip should remain compact.
-  - Side Rails: Left and right vertical rails remain locked to a narrow width (`44px` to `56px`) with centered, secondary items.
+  - Collapsed Side Rails: Left and right vertical rails remain locked to a narrow width (`44px` to `56px`) with centered, secondary items. They are collapsed rails, not expanded side panels.
+  - Left Rail Role: Workbook/navigation affordances such as workbook outline, named ranges/tables, imports/files, and future templates/examples.
+  - Right Rail Role: Contextual affordances such as format/properties, comments/notes, functions/help, and future activity/history/diagnostics.
+  - Expanded Panels: Expanded side panels, visible right inspectors, and large left sidebars are not part of the default shell state.
   - Bottom Bar: Retains a slim height (`36px` to `44px`) to host sheet tabs and zoom/status metrics.
 
 ## Elevation & Depth
