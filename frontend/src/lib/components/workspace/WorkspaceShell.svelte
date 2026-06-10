@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TopChrome from './TopChrome.svelte';
+	import FormulaBar from './FormulaBar.svelte';
 </script>
 
 <div class="workspace-shell">
@@ -8,9 +9,9 @@
 		<TopChrome />
 	</header>
 
-	<!-- Formula/Control Strip Placeholder -->
-	<section class="formula-strip" aria-label="Formula/control strip placeholder">
-		<span class="label">Formula/control strip</span>
+	<!-- Formula/Control Strip -->
+	<section class="formula-strip" aria-label="Formula bar">
+		<FormulaBar />
 	</section>
 
 	<!-- Left Rail Placeholder -->
@@ -67,7 +68,6 @@
 		border-bottom: 1px solid var(--color-border);
 		display: flex;
 		align-items: center;
-		padding: 0 12px;
 	}
 
 	/* Left Rail Region */
