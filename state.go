@@ -3,8 +3,9 @@ package main
 import "slices"
 
 const (
-	statusKindReady = "ready"
-	statusKindError = "error"
+	statusKindReady   = "ready"
+	statusKindLoading = "loading"
+	statusKindError   = "error"
 
 	defaultStatusMessage = "Ready"
 	defaultWorkbookTitle = "Untitled"
@@ -128,7 +129,6 @@ type RowLayout struct {
 	Height       float64 `json:"height"`
 	Hidden       bool    `json:"hidden"`
 	OutlineLevel int     `json:"outlineLevel"`
-	StyleID      int     `json:"styleId"`
 }
 
 // CellStyle describes basic cell formatting metadata.

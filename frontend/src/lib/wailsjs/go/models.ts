@@ -191,7 +191,6 @@ export namespace main {
 	    height: number;
 	    hidden: boolean;
 	    outlineLevel: number;
-	    styleId: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new RowLayout(source);
@@ -203,7 +202,6 @@ export namespace main {
 	        this.height = source["height"];
 	        this.hidden = source["hidden"];
 	        this.outlineLevel = source["outlineLevel"];
-	        this.styleId = source["styleId"];
 	    }
 	}
 	export class ColumnLayout {

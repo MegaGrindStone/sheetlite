@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stateful App struct with synchronized AppState and view-model methods
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom)
+- xlsx workbook loading via excelize with full cell, sheet, and style support
+  (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
 - BottomBar component with add-sheet button, sheet tabs, and status readouts
   (Ready, A1, 100%)
 - SideRail component with disabled icon buttons for collapsed left and right
