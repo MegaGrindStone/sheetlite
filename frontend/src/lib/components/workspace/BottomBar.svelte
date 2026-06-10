@@ -11,22 +11,43 @@
 
 	let { workbook, view, status, onSetActiveSheet, onSetZoom }: Props = $props();
 
-	const activeSheetName = $derived(
-		view?.activeSheetName || workbook?.sheets?.[0]?.name || 'Sheet 1'
-	);
-	const sheetCount = $derived(workbook?.sheets?.length || 1);
+	const sheets = $derived(workbook?.sheets ?? []);
+	const activeSheetName = $derived(view?.activeSheetName || sheets[0]?.name || '');
 	const sheetCommandWired = $derived(Boolean(onSetActiveSheet));
 	const zoomCommandWired = $derived(Boolean(onSetZoom));
-	const sheetTabTitle = $derived(
-		`${sheetCount} sheet${sheetCount === 1 ? '' : 's'} loaded; sheet switching ${sheetCommandWired ? 'is wired for later controls' : 'is inactive'}.`
+	const statusKind = $derived(status?.kind ?? '');
+	const statusText = $derived(status?.message?.trim() ?? '');
+	const statusTitle = $derived(
+		statusText ? (statusKind ? `${statusKind}: ${statusText}` : statusText) : 'Status'
 	);
-	const statusKind = $derived(status?.kind ?? 'ready');
-	const statusText = $derived(status?.message?.trim() || 'Ready');
-	const selectionRef = $derived(view?.selection?.ref || view?.activeCell?.ref || 'A1');
-	const zoomText = $derived(`${view?.zoomPercent ?? 100}%`);
+	const selectionRef = $derived(view?.selection?.ref || view?.activeCell?.ref || '');
+	const zoomPercent = $derived(view?.zoomPercent);
+	const zoomText = $derived(zoomPercent == null ? '' : `${zoomPercent}%`);
 	const zoomTitle = $derived(
-		zoomCommandWired ? 'Zoom command is wired for later controls.' : 'Zoom controls are inactive.'
+		zoomCommandWired
+			? 'Zoom readout from app state; controls are inactive.'
+			: 'Zoom controls are inactive.'
 	);
+
+	function isActiveSheet(sheetName: string): boolean {
+		return sheetName === activeSheetName;
+	}
+
+	function sheetTitle(sheet: main.WorkbookSheet): string {
+		if (isActiveSheet(sheet.name)) {
+			return `Active sheet: ${sheet.name}`;
+		}
+
+		return sheetCommandWired ? `Switch to sheet: ${sheet.name}` : `Sheet: ${sheet.name}`;
+	}
+
+	async function handleSheetClick(sheetName: string): Promise<void> {
+		if (!onSetActiveSheet || isActiveSheet(sheetName)) {
+			return;
+		}
+
+		await onSetActiveSheet(sheetName);
+	}
 </script>
 
 <div class="bottom-bar-inner">
@@ -58,16 +79,24 @@
 		<div class="vertical-divider" aria-hidden="true"></div>
 
 		<!-- Sheet tab area -->
-		<div class="sheet-tabs" aria-label="Sheets (static)">
-			<div
-				class="sheet-tab active"
-				aria-current="true"
-				aria-label={`Active sheet: ${activeSheetName}`}
-				title={sheetTabTitle}
-			>
-				<span class="sheet-tab-text">{activeSheetName}</span>
-				<div class="active-indicator"></div>
-			</div>
+		<div class="sheet-tabs" aria-label="Workbook sheets">
+			{#each sheets as sheet (sheet.name)}
+				<button
+					type="button"
+					class="sheet-tab"
+					class:active={isActiveSheet(sheet.name)}
+					aria-current={isActiveSheet(sheet.name) ? 'page' : undefined}
+					aria-label={`${isActiveSheet(sheet.name) ? 'Active sheet' : 'Sheet'}: ${sheet.name}`}
+					title={sheetTitle(sheet)}
+					disabled={!sheetCommandWired}
+					onclick={() => void handleSheetClick(sheet.name)}
+				>
+					<span class="sheet-tab-text">{sheet.name}</span>
+					{#if isActiveSheet(sheet.name)}
+						<div class="active-indicator"></div>
+					{/if}
+				</button>
+			{/each}
 		</div>
 	</div>
 
@@ -77,9 +106,10 @@
 	<!-- Right: Status / metrics readouts -->
 	<div class="status-section">
 		<div
-			class="status-item ready"
-			title={`${statusKind}: ${statusText}`}
+			class="status-item status-message"
+			title={statusTitle}
 			data-status-kind={statusKind}
+			aria-live="polite"
 		>
 			<span class="status-text">{statusText}</span>
 		</div>
@@ -143,6 +173,14 @@
 		display: flex;
 		align-items: flex-end;
 		height: 100%;
+		min-width: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+	}
+
+	.sheet-tabs::-webkit-scrollbar {
+		display: none;
 	}
 
 	.sheet-tab {
@@ -152,19 +190,36 @@
 		justify-content: center;
 		height: 32px; /* Sits 4px below the top of the 36px height bar, flush with the bottom */
 		padding: 0 16px;
+		background-color: transparent;
+		border: 1px solid transparent;
+		color: var(--color-text-muted);
 		font-size: 11px;
 		font-weight: 500;
-		cursor: default;
+		cursor: pointer;
 		box-sizing: border-box;
+	}
+
+	.sheet-tab:not(.active):hover {
+		background-color: var(--color-surface-hover);
+		color: var(--color-text);
 	}
 
 	.sheet-tab.active {
 		background-color: var(--color-surface);
-		border-left: 1px solid var(--color-border);
-		border-right: 1px solid var(--color-border);
-		border-top: 1px solid var(--color-border);
+		border-left-color: var(--color-border);
+		border-right-color: var(--color-border);
+		border-top-color: var(--color-border);
+		border-bottom-color: var(--color-surface);
 		color: var(--color-accent);
 		border-radius: 2px 2px 0 0;
+		cursor: default;
+	}
+
+	.sheet-tab-text {
+		max-width: 160px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.active-indicator {
@@ -194,8 +249,16 @@
 		font-weight: 500;
 	}
 
-	.ready .status-text {
+	.status-message .status-text {
 		color: var(--color-text-muted);
+	}
+
+	.status-item[data-status-kind='loading'] .status-text {
+		color: var(--color-accent);
+	}
+
+	.status-item[data-status-kind='error'] .status-text {
+		color: var(--color-text);
 	}
 
 	.selection .selection-text {

@@ -8,21 +8,21 @@
 
 	let { view, activeCell }: Props = $props();
 
-	const activeCellRef = $derived(view?.activeCell?.ref ?? 'A1');
+	const activeCellRef = $derived(view?.activeCell?.ref ?? '');
+	const formulaText = $derived(
+		activeCell?.hasFormula && activeCell.formula ? activeCell.formula : (activeCell?.value ?? '')
+	);
+	const activeCellTitle = $derived(
+		activeCellRef ? `Current cell (${activeCellRef})` : 'Current cell'
+	);
 	const formulaTitle = $derived(
-		activeCell?.hasFormula
-			? `Formula editing is inactive for ${activeCellRef}.`
-			: `Formula bar for ${activeCellRef} is inactive.`
+		activeCellRef ? `Formula bar for ${activeCellRef} is inactive.` : 'Formula bar is inactive.'
 	);
 </script>
 
 <div class="formula-bar" aria-label="Formula bar">
-	<!-- Name Box showing A1 -->
-	<div
-		class="name-box"
-		aria-label="Current cell reference"
-		title={`Current cell (${activeCellRef})`}
-	>
+	<!-- Name box showing the Go-owned active cell reference -->
+	<div class="name-box" aria-label="Current cell reference" title={activeCellTitle}>
 		{activeCellRef}
 	</div>
 
@@ -37,8 +37,9 @@
 		class="formula-display"
 		type="text"
 		disabled
-		aria-label={`Formula bar input for ${activeCellRef} (inactive)`}
+		aria-label={`Formula bar input for ${activeCellRef || 'selected cell'} (inactive)`}
 		title={formulaTitle}
+		value={formulaText}
 	/>
 </div>
 

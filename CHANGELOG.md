@@ -13,12 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom)
 - xlsx workbook loading via excelize with full cell, sheet, and style support
   (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
-- BottomBar component with add-sheet button, sheet tabs, and status readouts
-  (Ready, A1, 100%)
+- BottomBar component with interactive sheet tabs rendered from workbook
+  sheets, click-to-switch handling, horizontal scroll overflow for many
+  sheets, and dynamic status readouts with color-coded kind indicators
 - SideRail component with disabled icon buttons for collapsed left and right
   workspace rails
-- FormulaBar component with name box, visual divider, fx marker, and disabled
-  formula display area, integrated into WorkspaceShell
+- FormulaBar component with name box, visual divider, fx marker, and a
+  formula display wired to live cell data (formula or raw value),
+  integrated into WorkspaceShell
 - Workspace shell with CSS Grid layout (top chrome, formula strip, left/right
   rails, grid canvas, bottom bar) wiring all child components to Wails Go
   backend bindings, with drag-and-drop file opening via Wails runtime handler
