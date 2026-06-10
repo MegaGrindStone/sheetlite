@@ -5,5 +5,5 @@ frontend/build
 # AI artifacts
 .todo
 chat.txt
-docs/discussions
+docs/discussion
 docs/plans
