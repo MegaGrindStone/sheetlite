@@ -187,6 +187,7 @@
 <style>
 	/* Full-window viewport locked CSS Grid Layout */
 	.workspace-shell {
+		--wails-drop-target: drop;
 		display: grid;
 		grid-template-areas:
 			'top-chrome top-chrome top-chrome'

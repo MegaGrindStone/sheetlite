@@ -79,11 +79,13 @@ func TestViewCommandsUpdateState(t *testing.T) {
 	}
 
 	selected := app.SelectCell("b2")
-	if selected.View.ActiveCell != (CellAddress{Ref: "B2", Row: 2, Column: 2}) {
+	expectedB2 := CellAddress{Ref: "B2", Row: 2, Column: 2}
+	if selected.View.ActiveCell != expectedB2 {
 		t.Fatalf("expected active cell B2, got %#v", selected.View.ActiveCell)
 	}
-	if selected.View.Selection.Ref != "A1" {
-		t.Fatalf("expected selection to stay A1, got %#v", selected.View.Selection)
+	expectedSelection := CellRange{Ref: "B2", Start: expectedB2, End: expectedB2}
+	if selected.View.Selection != expectedSelection {
+		t.Fatalf("expected selection range B2, got %#v", selected.View.Selection)
 	}
 
 	scrolled := app.SetScrollPosition(4, 3)

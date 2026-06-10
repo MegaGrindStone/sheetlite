@@ -88,8 +88,10 @@ func (a *App) SelectCell(cellRef string) AppState {
 		return cloneAppState(a.state)
 	}
 
-	// Selection is kept separate so a future range selection can survive focus movement.
+	// Active cell and selection are both updated to the single-cell range,
+	// keeping selection separate for future multi-cell range expansion.
 	a.state.View.ActiveCell = address
+	a.state.View.Selection = CellRange{Ref: address.Ref, Start: address, End: address}
 	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)

@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Stateful App struct with synchronized AppState and view-model methods
-  (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom)
+  (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom),
+  with SelectCell synchronizing the selection range
 - xlsx workbook loading via excelize with full cell, sheet, and style support
   (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
 - BottomBar component with interactive sheet tabs rendered from workbook
@@ -29,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   items (Edit, View, etc.), and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
 - Appearance mode support (system/light/dark) with localStorage persistence
-- SpreadsheetGrid component with dynamic grid sizing derived from actual
-  sheet bounds (40-column/100-row minimum floor), inline cell value
-  rendering with text-overflow ellipsis, and active-cell selection styling
+- SpreadsheetGrid component with dynamic grid derived from sheet bounds,
+  visual cell styling (fonts, fills, alignment, borders), merged cell
+  spanning with value display, selection range highlighting with outline
+  overlay, hidden row/column support, dynamic column widths and row
+  heights from workbook layout, scroll position tracking,
+  keyboard-accessible cell selection, and active-cell styling with inset
+  box-shadow

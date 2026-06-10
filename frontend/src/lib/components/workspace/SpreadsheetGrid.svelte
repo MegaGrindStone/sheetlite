@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { main } from '$lib/wailsjs/go/models';
 
 	type Props = {
@@ -113,19 +114,192 @@
 		return lookup;
 	}
 
-	function getCellTitle(ref: string, cell: main.CellData | undefined): string | undefined {
-		if (!cell) {
-			return undefined;
+	type MergedInfo = {
+		range: main.CellRange;
+		value: string;
+		rowSpan: number;
+		colSpan: number;
+	};
+
+	function createMergedLookups(sheet: main.WorkbookSheet | undefined) {
+		const mergedCellLookup = new SvelteMap<string, MergedInfo>();
+		const coveredCells = new SvelteSet<string>();
+
+		if (!sheet || !sheet.mergedCells) {
+			return { mergedCellLookup, coveredCells };
 		}
 
-		if (cell.value) {
-			return `${ref}: ${cell.value}`;
+		for (const m of sheet.mergedCells) {
+			const start = m.range.start;
+			const end = m.range.end;
+			if (!start || !end) continue;
+
+			const rowSpan = end.row - start.row + 1;
+			const colSpan = end.column - start.column + 1;
+
+			const tlRef = start.ref;
+			mergedCellLookup.set(tlRef, {
+				range: m.range,
+				value: m.value,
+				rowSpan,
+				colSpan
+			});
+
+			for (let r = start.row; r <= end.row; r++) {
+				for (let c = start.column; c <= end.column; c++) {
+					const colLabel = getColLabel(c - 1);
+					const ref = `${colLabel}${r}`;
+					if (ref !== tlRef) {
+						coveredCells.add(ref);
+					}
+				}
+			}
 		}
 
-		if (cell.hasFormula) {
-			return `${ref}: formula cell`;
+		return { mergedCellLookup, coveredCells };
+	}
+
+	const stylesMap = $derived(new Map(styles.map((s) => [s.id, s])));
+
+	function getCellStyles(cell: main.CellData | undefined): string {
+		if (!cell) return '';
+		const style = stylesMap.get(cell.styleId);
+		if (!style) return '';
+
+		const cssParts: string[] = [];
+
+		if (style.font) {
+			if (style.font.family) {
+				cssParts.push(`font-family: "${style.font.family}", sans-serif`);
+			}
+			if (style.font.size) {
+				cssParts.push(`font-size: ${style.font.size}pt`);
+			}
+			if (style.font.bold) {
+				cssParts.push('font-weight: bold');
+			}
+			if (style.font.italic) {
+				cssParts.push('font-style: italic');
+			}
+
+			let textDecoration = '';
+			if (style.font.underline) {
+				textDecoration += 'underline ';
+			}
+			if (style.font.strikethrough) {
+				textDecoration += 'line-through ';
+			}
+			if (textDecoration) {
+				cssParts.push(`text-decoration: ${textDecoration.trim()}`);
+			}
+			if (style.font.color) {
+				cssParts.push(`color: ${style.font.color}`);
+			}
 		}
 
+		if (style.fill) {
+			if (style.fill.color) {
+				cssParts.push(`background-color: ${style.fill.color}`);
+			}
+		}
+
+		if (style.alignment) {
+			const hAlign = style.alignment.horizontal;
+			if (hAlign && hAlign !== 'general') {
+				let flexAlign = '';
+				let textAlign = '';
+				if (hAlign === 'left') {
+					flexAlign = 'flex-start';
+					textAlign = 'left';
+				} else if (hAlign === 'right') {
+					flexAlign = 'flex-end';
+					textAlign = 'right';
+				} else if (hAlign === 'center' || hAlign === 'centerContinuous') {
+					flexAlign = 'center';
+					textAlign = 'center';
+				} else if (hAlign === 'justify') {
+					flexAlign = 'space-between';
+					textAlign = 'justify';
+				}
+				if (flexAlign) {
+					cssParts.push(`justify-content: ${flexAlign}`);
+				}
+				if (textAlign) {
+					cssParts.push(`text-align: ${textAlign}`);
+				}
+			}
+
+			const vAlign = style.alignment.vertical;
+			if (vAlign && vAlign !== 'general') {
+				let flexVAlign = '';
+				if (vAlign === 'top') {
+					flexVAlign = 'flex-start';
+				} else if (vAlign === 'center') {
+					flexVAlign = 'center';
+				} else if (vAlign === 'bottom') {
+					flexVAlign = 'flex-end';
+				}
+				if (flexVAlign) {
+					cssParts.push(`align-items: ${flexVAlign}`);
+				}
+			}
+
+			if (style.alignment.wrapText) {
+				cssParts.push('white-space: normal');
+				cssParts.push('word-break: break-all');
+			}
+		}
+
+		if (style.borders) {
+			for (const border of style.borders) {
+				const side = border.side;
+				const bStyle = border.style;
+				if (bStyle > 0) {
+					const color = border.color || 'currentColor';
+					const width = '1px';
+					if (side === 'left') cssParts.push(`border-left: ${width} solid ${color}`);
+					if (side === 'right') cssParts.push(`border-right: ${width} solid ${color}`);
+					if (side === 'top') cssParts.push(`border-top: ${width} solid ${color}`);
+					if (side === 'bottom') cssParts.push(`border-bottom: ${width} solid ${color}`);
+				}
+			}
+		}
+
+		return cssParts.join('; ');
+	}
+
+	function isCellSelected(row: number, col: number): boolean {
+		if (!view?.selection?.start || !view?.selection?.end) return false;
+		const start = view.selection.start;
+		const end = view.selection.end;
+
+		const minRow = Math.min(start.row, end.row);
+		const maxRow = Math.max(start.row, end.row);
+		const minCol = Math.min(start.column, end.column);
+		const maxCol = Math.max(start.column, end.column);
+
+		return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+	}
+
+	function getGridCellTitle(
+		ref: string,
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined
+	): string {
+		if (cell) {
+			if (cell.value) {
+				return `${ref}: ${cell.value}`;
+			}
+			if (cell.hasFormula) {
+				return `${ref}: formula cell`;
+			}
+		}
+		if (mergedInfo) {
+			if (mergedInfo.value) {
+				return `${ref}: ${mergedInfo.value} (merged)`;
+			}
+			return `${ref}: merged cells`;
+		}
 		return ref;
 	}
 
@@ -140,63 +314,214 @@
 	const cellsByRef = $derived(createCellLookup(activeSheet));
 	const selectCommandWired = $derived(Boolean(onSelectCell));
 	const scrollCommandWired = $derived(Boolean(onSetScrollPosition));
+
+	const mergedLookups = $derived(createMergedLookups(activeSheet));
+	const mergedCellLookup = $derived(mergedLookups.mergedCellLookup);
+	const coveredCells = $derived(mergedLookups.coveredCells);
+
+	const hiddenColumns = $derived(
+		new Set((activeSheet?.columns ?? []).filter((col) => col.hidden).map((col) => col.index))
+	);
+
+	const hiddenRows = $derived(
+		new Set((activeSheet?.rows ?? []).filter((row) => row.hidden).map((row) => row.index))
+	);
+
+	const colWidthsCss = $derived(
+		columns
+			.map((col) => {
+				const layout = activeSheet?.columns?.find((c) => c.index === col.index);
+				if (layout) {
+					if (layout.hidden) return '0px';
+					return `${layout.width * 8}px`;
+				}
+				const defWidth = activeSheet?.defaultColumnWidth || 8.43;
+				return `${defWidth * 8}px`;
+			})
+			.join(' ')
+	);
+
+	const rowHeightsCss = $derived(
+		rows
+			.map((row) => {
+				const layout = activeSheet?.rows?.find((r) => r.index === row);
+				if (layout) {
+					if (layout.hidden) return '0px';
+					return `${layout.height * 1.3}px`;
+				}
+				const defHeight = activeSheet?.defaultRowHeight || 15;
+				return `${defHeight * 1.3}px`;
+			})
+			.join(' ')
+	);
+
 	const metadataLabel = $derived(
 		`${activeSheet?.cells?.length ?? 0} loaded cells rendered across ${rowCount} rows and ${columnCount} columns. ${styles.length} styles are available for later grid rendering.`
 	);
 	const viewportLabel = $derived(
 		`Spreadsheet grid for ${activeSheetName}; active cell ${activeCellRef}; displayed workbook values are rendered when loaded.`
 	);
+
+	function handleScroll(event: Event) {
+		if (!onSetScrollPosition) return;
+		const target = event.currentTarget as HTMLDivElement;
+		if (!target) return;
+
+		const scrollTop = target.scrollTop;
+		const scrollLeft = target.scrollLeft;
+
+		let accumulatedWidth = 0;
+		let leftColumn = 1;
+		for (const col of columns) {
+			const layout = activeSheet?.columns?.find((c) => c.index === col.index);
+			const width = layout
+				? layout.hidden
+					? 0
+					: layout.width * 8
+				: (activeSheet?.defaultColumnWidth || 8.43) * 8;
+
+			if (accumulatedWidth + width > scrollLeft) {
+				leftColumn = col.index;
+				break;
+			}
+			accumulatedWidth += width;
+		}
+
+		let accumulatedHeight = 0;
+		let topRow = 1;
+		for (const row of rows) {
+			const layout = activeSheet?.rows?.find((r) => r.index === row);
+			const height = layout
+				? layout.hidden
+					? 0
+					: layout.height * 1.3
+				: (activeSheet?.defaultRowHeight || 15) * 1.3;
+
+			if (accumulatedHeight + height > scrollTop) {
+				topRow = row;
+				break;
+			}
+			accumulatedHeight += height;
+		}
+
+		if (view?.scroll?.topRow !== topRow || view?.scroll?.leftColumn !== leftColumn) {
+			onSetScrollPosition(topRow, leftColumn);
+		}
+	}
 </script>
 
 <div
 	class="spreadsheet-viewport"
 	class:drag-active={dragActive}
-	role="img"
+	role="region"
 	aria-label={viewportLabel}
+	onscroll={handleScroll}
 >
 	<div
 		class="grid-table"
-		aria-hidden="true"
+		role="grid"
+		aria-rowcount={rowCount + 1}
+		aria-colcount={columnCount + 1}
 		title={metadataLabel}
 		data-select-command-wired={selectCommandWired}
 		data-scroll-command-wired={scrollCommandWired}
-		style={`--column-count: ${columnCount};`}
+		style="
+			grid-template-columns: var(--row-header-width, 40px) {colWidthsCss};
+			grid-template-rows: var(--header-row-height, 24px) {rowHeightsCss};
+		"
 	>
 		<!-- Top-left corner selector block -->
-		<div class="corner-header" aria-hidden="true"></div>
+		<div class="corner-header" aria-hidden="true" style="grid-row: 1; grid-column: 1;"></div>
 
 		<!-- Column Headers -->
 		{#each columns as column (column.index)}
-			<div class="column-header" class:active={column.label === activeColumnLabel}>
-				{column.label}
-			</div>
+			{#if !hiddenColumns.has(column.index)}
+				<div
+					class="column-header"
+					class:active={column.label === activeColumnLabel}
+					style="grid-row: 1; grid-column: {column.index + 1};"
+					role="columnheader"
+				>
+					{column.label}
+				</div>
+			{/if}
 		{/each}
 
 		<!-- Row Loop -->
 		{#each rows as row (row)}
 			<!-- Row Header -->
-			<div class="row-header" class:active={row === activeRowIndex}>
-				{row}
-			</div>
+			{#if !hiddenRows.has(row)}
+				<div
+					class="row-header"
+					class:active={row === activeRowIndex}
+					style="grid-row: {row + 1}; grid-column: 1;"
+					role="rowheader"
+				>
+					{row}
+				</div>
+			{/if}
 
 			<!-- Grid Cells for this row -->
 			{#each columns as column (column.index)}
 				{@const ref = `${column.label}${row}`}
-				{@const cell = cellsByRef[ref]}
-				<div
-					class="grid-cell"
-					class:active-cell={ref === activeCellRef}
-					class:has-value={Boolean(cell?.value)}
-					data-cell-ref={ref}
-					data-cell-kind={cell?.kind}
-					title={getCellTitle(ref, cell)}
-				>
-					{#if cell?.value}
-						<span class="cell-value">{cell.value}</span>
-					{/if}
-				</div>
+				{#if !coveredCells.has(ref) && !hiddenRows.has(row) && !hiddenColumns.has(column.index)}
+					{@const cell = cellsByRef[ref]}
+					{@const mergedInfo = mergedCellLookup.get(ref)}
+					<div
+						class="grid-cell"
+						class:active-cell={ref === activeCellRef}
+						class:selected-cell={isCellSelected(row, column.index) && ref !== activeCellRef}
+						class:has-value={Boolean(cell?.value || mergedInfo?.value)}
+						data-cell-ref={ref}
+						data-cell-kind={cell?.kind}
+						title={getGridCellTitle(ref, cell, mergedInfo)}
+						onclick={() => onSelectCell?.(ref)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								onSelectCell?.(ref);
+							}
+						}}
+						role="gridcell"
+						tabindex="0"
+						aria-selected={isCellSelected(row, column.index)}
+						aria-rowindex={row + 1}
+						aria-colindex={column.index + 1}
+						style="
+							grid-row: {mergedInfo ? `${row + 1} / span ${mergedInfo.rowSpan}` : `${row + 1}`};
+							grid-column: {mergedInfo
+							? `${column.index + 1} / span ${mergedInfo.colSpan}`
+							: `${column.index + 1}`};
+							{getCellStyles(cell)}
+						"
+					>
+						{#if cell?.value}
+							<span class="cell-value">{cell.value}</span>
+						{:else if mergedInfo?.value}
+							<span class="cell-value">{mergedInfo.value}</span>
+						{/if}
+					</div>
+				{/if}
 			{/each}
 		{/each}
+
+		<!-- Active Selection range outline -->
+		{#if view?.selection?.start && view?.selection?.end}
+			{@const start = view.selection.start}
+			{@const end = view.selection.end}
+			{@const minRow = Math.min(start.row, end.row)}
+			{@const maxRow = Math.max(start.row, end.row)}
+			{@const minCol = Math.min(start.column, end.column)}
+			{@const maxCol = Math.max(start.column, end.column)}
+			<div
+				class="selection-outline"
+				aria-hidden="true"
+				style="
+					grid-row: {minRow + 1} / {maxRow + 2};
+					grid-column: {minCol + 1} / {maxCol + 2};
+				"
+			></div>
+		{/if}
 	</div>
 </div>
 
@@ -218,12 +543,9 @@
 	/* CSS Grid for perfect tabular spreadsheet alignment */
 	.grid-table {
 		--row-header-width: 40px;
-		--column-width: 100px;
-		--row-height: 24px;
+		--header-row-height: 24px;
 
 		display: grid;
-		grid-template-columns: var(--row-header-width) repeat(var(--column-count), var(--column-width));
-		grid-auto-rows: var(--row-height);
 		width: max-content;
 		position: relative;
 	}
@@ -327,10 +649,21 @@
 
 	/* Active selection styling (A1 cell) using inset box shadow for crisp non-shifting layout */
 	.grid-cell.active-cell {
-		background-color: var(--color-selection-bg);
+		background-color: var(--color-surface);
 		box-shadow: inset 0 0 0 2px var(--color-selection-border);
 		/* Keep selection outline visible above surrounding cells */
 		z-index: 1;
 		position: relative;
+	}
+
+	.grid-cell.selected-cell {
+		background-color: var(--color-selection-bg);
+	}
+
+	.selection-outline {
+		border: 2px solid var(--color-selection-border);
+		pointer-events: none;
+		z-index: 6;
+		box-sizing: border-box;
 	}
 </style>
