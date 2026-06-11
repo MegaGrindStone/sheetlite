@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   items (Edit, View, etc.), and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
 - Appearance mode support (system/light/dark) with Go backend state machine,
-  theme resolution, localStorage persistence, and snapshot-safe normalization
+  theme resolution, appearance command methods (InitializeAppearance,
+  SetAppearanceMode, SetSystemTheme), localStorage persistence, snapshot-safe
+  normalization, and appearance-aware workbook style rendering on load
 - Dark theme cell text with automatic WCAG 2.1 AA contrast adjustment
   via binary-search color mixing and minimum 4.5:1 contrast ratio
 - SpreadsheetGrid component with dynamic grid derived from sheet bounds,

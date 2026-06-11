@@ -78,12 +78,17 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	appearance := normalizeAppearanceState(a.state.Appearance)
+	for i := range workbook.Styles {
+		workbook.Styles[i].render(appearance.EffectiveTheme)
+	}
+
 	// Replacing workbook/view should not reset the runtime appearance choice.
 	a.state = AppState{
 		Workbook:   workbook,
 		View:       view,
 		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
-		Appearance: normalizeAppearanceState(a.state.Appearance),
+		Appearance: appearance,
 	}
 
 	return cloneAppState(a.state)

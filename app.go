@@ -40,6 +40,85 @@ func (a *App) State() AppState {
 	return cloneAppState(a.state)
 }
 
+// InitializeAppearance seeds backend appearance from frontend persistence and system theme.
+func (a *App) InitializeAppearance(mode AppearanceMode, systemTheme AppearanceTheme) AppState {
+	if !mode.valid() {
+		mode = AppearanceModeSystem
+	}
+	if !systemTheme.valid() {
+		systemTheme = AppearanceThemeLight
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.state.Appearance = AppearanceState{
+		Mode:           mode,
+		SystemTheme:    systemTheme,
+		EffectiveTheme: resolveEffectiveTheme(mode, systemTheme),
+	}
+	for i := range a.state.Workbook.Styles {
+		a.state.Workbook.Styles[i].render(a.state.Appearance.EffectiveTheme)
+	}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
+// SetAppearanceMode changes the selected appearance mode.
+func (a *App) SetAppearanceMode(mode AppearanceMode) AppState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if !mode.valid() {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: "Appearance mode must be system, light, or dark.",
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	appearance := normalizeAppearanceState(a.state.Appearance)
+	appearance.Mode = mode
+	appearance.EffectiveTheme = resolveEffectiveTheme(appearance.Mode, appearance.SystemTheme)
+	a.state.Appearance = appearance
+	for i := range a.state.Workbook.Styles {
+		a.state.Workbook.Styles[i].render(appearance.EffectiveTheme)
+	}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
+// SetSystemTheme changes the latest frontend-reported system theme.
+func (a *App) SetSystemTheme(theme AppearanceTheme) AppState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if !theme.valid() {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: "System theme must be light or dark.",
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	appearance := normalizeAppearanceState(a.state.Appearance)
+	appearance.SystemTheme = theme
+	appearance.EffectiveTheme = resolveEffectiveTheme(appearance.Mode, appearance.SystemTheme)
+	a.state.Appearance = appearance
+	for i := range a.state.Workbook.Styles {
+		a.state.Workbook.Styles[i].render(appearance.EffectiveTheme)
+	}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
 // SetActiveSheet changes the active sheet when the sheet exists in the state.
 func (a *App) SetActiveSheet(name string) AppState {
 	sheetName := strings.TrimSpace(name)
