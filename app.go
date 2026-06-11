@@ -233,7 +233,7 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 		return cloneAppState(a.state)
 	}
 
-	changed, err := setSheetCellValue(&a.state.Workbook.Sheets[sheetIndex], address, value)
+	changed, err := a.state.Workbook.Sheets[sheetIndex].setCellValue(address, value)
 	if err != nil {
 		a.state.Status = AppStatus{
 			Kind:    statusKindError,

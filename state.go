@@ -69,21 +69,6 @@ type ScrollPosition struct {
 	LeftColumn int `json:"leftColumn"`
 }
 
-// WorkbookSheet describes one worksheet and the loaded data for it.
-type WorkbookSheet struct {
-	Index              int               `json:"index"`
-	Name               string            `json:"name"`
-	State              string            `json:"state"`
-	Visible            bool              `json:"visible"`
-	Bounds             CellRange         `json:"bounds"`
-	DefaultColumnWidth float64           `json:"defaultColumnWidth"`
-	DefaultRowHeight   float64           `json:"defaultRowHeight"`
-	Cells              []CellData        `json:"cells"`
-	MergedCells        []MergedCellRange `json:"mergedCells"`
-	Columns            []ColumnLayout    `json:"columns"`
-	Rows               []RowLayout       `json:"rows"`
-}
-
 // CellData describes one loaded worksheet cell.
 type CellData struct {
 	Ref        string `json:"ref"`

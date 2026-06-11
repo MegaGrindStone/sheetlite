@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"strings"
 
@@ -9,6 +10,127 @@ import (
 )
 
 const excelizeDefaultColumnWidth = 9.140625
+
+// WorkbookSheet describes one worksheet and the loaded data for it.
+type WorkbookSheet struct {
+	Index              int               `json:"index"`
+	Name               string            `json:"name"`
+	State              string            `json:"state"`
+	Visible            bool              `json:"visible"`
+	Bounds             CellRange         `json:"bounds"`
+	DefaultColumnWidth float64           `json:"defaultColumnWidth"`
+	DefaultRowHeight   float64           `json:"defaultRowHeight"`
+	Cells              []CellData        `json:"cells"`
+	MergedCells        []MergedCellRange `json:"mergedCells"`
+	Columns            []ColumnLayout    `json:"columns"`
+	Rows               []RowLayout       `json:"rows"`
+}
+
+func (w *WorkbookSheet) setCellValue(address CellAddress, value string) (bool, error) {
+	if value == "" {
+		return w.clearCellValue(address), nil
+	}
+
+	expandedBounds, err := expandedSheetBounds(w.Bounds, address)
+	if err != nil {
+		return false, err
+	}
+
+	index := slices.IndexFunc(w.Cells, func(cell CellData) bool {
+		return cell.Ref == address.Ref
+	})
+	if index >= 0 {
+		oldCell := w.Cells[index]
+		nextCell := oldCell
+		nextCell.Ref = address.Ref
+		nextCell.Row = address.Row
+		nextCell.Column = address.Column
+		nextCell.Value = value
+		nextCell.RawValue = value
+		nextCell.Formula = ""
+		nextCell.HasFormula = false
+		nextCell.Kind = cellKindString
+
+		// Formula metadata and bounds can make an edit meaningful even when text matches.
+		changed := nextCell != oldCell || expandedBounds != w.Bounds
+		if !changed {
+			return false, nil
+		}
+
+		w.Cells[index] = nextCell
+		w.Bounds = expandedBounds
+		slices.SortFunc(w.Cells, func(left CellData, right CellData) int {
+			if left.Row != right.Row {
+				return left.Row - right.Row
+			}
+
+			return left.Column - right.Column
+		})
+
+		return true, nil
+	}
+
+	w.Cells = append(w.Cells, CellData{
+		Ref:      address.Ref,
+		Row:      address.Row,
+		Column:   address.Column,
+		Value:    value,
+		RawValue: value,
+		Kind:     cellKindString,
+	})
+	w.Bounds = expandedBounds
+	slices.SortFunc(w.Cells, func(left CellData, right CellData) int {
+		if left.Row != right.Row {
+			return left.Row - right.Row
+		}
+
+		return left.Column - right.Column
+	})
+
+	return true, nil
+}
+
+func (w *WorkbookSheet) clearCellValue(address CellAddress) bool {
+	index := slices.IndexFunc(w.Cells, func(cell CellData) bool {
+		return cell.Ref == address.Ref
+	})
+	if index < 0 {
+		return false
+	}
+
+	oldCell := w.Cells[index]
+	nextCell := oldCell
+	nextCell.Ref = address.Ref
+	nextCell.Row = address.Row
+	nextCell.Column = address.Column
+	nextCell.Value = ""
+	nextCell.RawValue = ""
+	nextCell.Formula = ""
+	nextCell.HasFormula = false
+	nextCell.Kind = ""
+
+	// Styled blanks stay in the sparse model so clears do not drop formatting.
+	if nextCell.StyleID == 0 {
+		w.Cells = append(w.Cells[:index], w.Cells[index+1:]...)
+
+		return true
+	}
+
+	if nextCell == oldCell {
+		return false
+	}
+
+	w.Cells[index] = nextCell
+	slices.SortFunc(w.Cells, func(left CellData, right CellData) int {
+		if left.Row != right.Row {
+			return left.Row - right.Row
+		}
+
+		return left.Column - right.Column
+	})
+
+	return true
+}
 
 func loadWorkbookSheet(file *excelize.File, sheetName string, index int) (WorkbookSheet, map[int]struct{}, error) {
 	styleIDs := map[int]struct{}{}

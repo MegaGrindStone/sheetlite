@@ -212,11 +212,11 @@ func TestSetSheetCellValueInsertsSortedAndExpandsBounds(t *testing.T) {
 		},
 	}
 
-	changed, err := setSheetCellValue(&sheet, mustParseCellAddress(t, "c3"), "tail")
+	changed, err := sheet.setCellValue(mustParseCellAddress(t, "c3"), "tail")
 	if err != nil || !changed {
 		t.Fatalf("expected C3 insertion to change sheet, changed=%t err=%v", changed, err)
 	}
-	changed, err = setSheetCellValue(&sheet, mustParseCellAddress(t, "b2"), "middle")
+	changed, err = sheet.setCellValue(mustParseCellAddress(t, "b2"), "middle")
 	if err != nil || !changed {
 		t.Fatalf("expected B2 insertion to change sheet, changed=%t err=%v", changed, err)
 	}
@@ -265,7 +265,7 @@ func TestSetSheetCellValuePreservesStyleAndClearsFormula(t *testing.T) {
 		},
 	}
 
-	changed, err := setSheetCellValue(&sheet, mustParseCellAddress(t, "A1"), "=literal")
+	changed, err := sheet.setCellValue(mustParseCellAddress(t, "A1"), "=literal")
 	if err != nil || !changed {
 		t.Fatalf("expected formula overwrite to change sheet, changed=%t err=%v", changed, err)
 	}
@@ -294,7 +294,7 @@ func TestSetSheetCellValueClearSemantics(t *testing.T) {
 		},
 	}
 
-	changed, err := setSheetCellValue(&sheet, mustParseCellAddress(t, "A1"), "")
+	changed, err := sheet.setCellValue(mustParseCellAddress(t, "A1"), "")
 	if err != nil || !changed {
 		t.Fatalf("expected clearing A1 to remove unstyled cell, changed=%t err=%v", changed, err)
 	}
@@ -302,7 +302,7 @@ func TestSetSheetCellValueClearSemantics(t *testing.T) {
 		t.Fatalf("expected unstyled A1 to be removed, got %#v", sheet.Cells)
 	}
 
-	changed, err = setSheetCellValue(&sheet, mustParseCellAddress(t, "B2"), "")
+	changed, err = sheet.setCellValue(mustParseCellAddress(t, "B2"), "")
 	if err != nil || !changed {
 		t.Fatalf("expected clearing B2 to keep style-only cell, changed=%t err=%v", changed, err)
 	}
