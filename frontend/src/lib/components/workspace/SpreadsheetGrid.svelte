@@ -168,6 +168,8 @@
 
 		const cssParts: string[] = [];
 
+		const textColor = style.render?.textColor || style.font?.color;
+
 		if (style.font) {
 			if (style.font.family) {
 				cssParts.push(`font-family: "${style.font.family}", sans-serif`);
@@ -192,9 +194,10 @@
 			if (textDecoration) {
 				cssParts.push(`text-decoration: ${textDecoration.trim()}`);
 			}
-			if (style.font.color) {
-				cssParts.push(`color: ${style.font.color}`);
-			}
+		}
+
+		if (textColor) {
+			cssParts.push(`color: ${textColor}`);
 		}
 
 		if (style.fill) {
