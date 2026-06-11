@@ -28,9 +28,10 @@ const (
 
 // AppState is the complete Go-owned state snapshot rendered by the frontend.
 type AppState struct {
-	Workbook WorkbookState     `json:"workbook"`
-	View     WorkbookViewState `json:"view"`
-	Status   AppStatus         `json:"status"`
+	Workbook   WorkbookState     `json:"workbook"`
+	View       WorkbookViewState `json:"view"`
+	Status     AppStatus         `json:"status"`
+	Appearance AppearanceState   `json:"appearance"`
 }
 
 // AppStatus describes current user-facing backend status.
@@ -131,51 +132,6 @@ type RowLayout struct {
 	OutlineLevel int     `json:"outlineLevel"`
 }
 
-// CellStyle describes basic cell formatting metadata.
-type CellStyle struct {
-	ID             int                `json:"id"`
-	NumberFormatID int                `json:"numberFormatId"`
-	NumberFormat   string             `json:"numberFormat"`
-	Font           CellFontStyle      `json:"font"`
-	Fill           CellFillStyle      `json:"fill"`
-	Alignment      CellAlignmentStyle `json:"alignment"`
-	Borders        []CellBorderStyle  `json:"borders"`
-}
-
-// CellFontStyle describes cell font formatting metadata.
-type CellFontStyle struct {
-	Family        string  `json:"family"`
-	Size          float64 `json:"size"`
-	Bold          bool    `json:"bold"`
-	Italic        bool    `json:"italic"`
-	Underline     string  `json:"underline"`
-	Strikethrough bool    `json:"strikethrough"`
-	Color         string  `json:"color"`
-}
-
-// CellFillStyle describes cell fill formatting metadata.
-type CellFillStyle struct {
-	Type    string   `json:"type"`
-	Pattern int      `json:"pattern"`
-	Color   string   `json:"color"`
-	Colors  []string `json:"colors"`
-}
-
-// CellAlignmentStyle describes cell text alignment metadata.
-type CellAlignmentStyle struct {
-	Horizontal   string `json:"horizontal"`
-	Vertical     string `json:"vertical"`
-	WrapText     bool   `json:"wrapText"`
-	TextRotation int    `json:"textRotation"`
-}
-
-// CellBorderStyle describes one side of cell border formatting metadata.
-type CellBorderStyle struct {
-	Side  string `json:"side"`
-	Style int    `json:"style"`
-	Color string `json:"color"`
-}
-
 func initialAppState() AppState {
 	a1 := CellAddress{Ref: "A1", Row: minExcelRow, Column: minExcelColumn}
 	// Reuse the exact same single-cell range for sheet bounds and initial selection.
@@ -214,11 +170,15 @@ func initialAppState() AppState {
 				LeftColumn: minExcelColumn,
 			},
 		},
-		Status: AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Appearance: defaultAppearanceState(),
 	}
 }
 
 func cloneAppState(state AppState) AppState {
+	// Keep zero-value App structs from leaking empty appearance fields.
+	state.Appearance = normalizeAppearanceState(state.Appearance)
+
 	// Returning AppState by value still shares slice backing arrays unless we copy them.
 	state.Workbook.Sheets = slices.Clone(state.Workbook.Sheets)
 	for i := range state.Workbook.Sheets {

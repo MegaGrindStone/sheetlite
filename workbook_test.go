@@ -24,11 +24,31 @@ func TestOpenWorkbookPathLoadsWorkbookState(t *testing.T) {
 
 	state := app.OpenWorkbookPath(path)
 	assertReadyStatus(t, state.Status)
+	assertDefaultAppearance(t, state.Appearance)
 	assertLoadedWorkbookIdentity(t, state, path)
 	dataSheet := assertLoadedSheetsAndView(t, state)
 	styleID := assertLoadedCells(t, dataSheet)
 	assertLoadedLayout(t, dataSheet)
 	assertLoadedStyle(t, state.Workbook.Styles, styleID)
+}
+
+func TestOpenWorkbookPathPreservesAppearance(t *testing.T) {
+	t.Parallel()
+
+	path := createWorkbookFixture(t)
+	expectedAppearance := AppearanceState{
+		Mode:           AppearanceModeDark,
+		SystemTheme:    AppearanceThemeLight,
+		EffectiveTheme: AppearanceThemeDark,
+	}
+	app := NewApp()
+	app.state.Appearance = expectedAppearance
+
+	state := app.OpenWorkbookPath(path)
+	assertReadyStatus(t, state.Status)
+	if state.Appearance != expectedAppearance {
+		t.Fatalf("expected workbook open to preserve appearance, got %#v", state.Appearance)
+	}
 }
 
 func TestOpenWorkbookRejectionsPreservePreviousWorkbook(t *testing.T) {

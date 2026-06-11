@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functional File menu popover for opening workbooks, disabled stub menu
   items (Edit, View, etc.), and disabled toolbar groups with SVG icons
 - AppearanceControl segmented component for toggling system/light/dark modes
-- Appearance mode support (system/light/dark) with localStorage persistence
+- Appearance mode support (system/light/dark) with Go backend state machine,
+  theme resolution, localStorage persistence, and snapshot-safe normalization
+- Dark theme cell text with automatic WCAG 2.1 AA contrast adjustment
+  via binary-search color mixing and minimum 4.5:1 contrast ratio
 - SpreadsheetGrid component with dynamic grid derived from sheet bounds,
   visual cell styling (fonts, fills, alignment, borders), merged cell
   spanning with value display, selection range highlighting with outline

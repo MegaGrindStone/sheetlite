@@ -8,6 +8,58 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// CellStyle describes basic cell formatting metadata.
+type CellStyle struct {
+	ID             int                `json:"id"`
+	NumberFormatID int                `json:"numberFormatId"`
+	NumberFormat   string             `json:"numberFormat"`
+	Font           CellFontStyle      `json:"font"`
+	Fill           CellFillStyle      `json:"fill"`
+	Alignment      CellAlignmentStyle `json:"alignment"`
+	Borders        []CellBorderStyle  `json:"borders"`
+	Render         CellRenderStyle    `json:"render"`
+}
+
+// CellFontStyle describes cell font formatting metadata.
+type CellFontStyle struct {
+	Family        string  `json:"family"`
+	Size          float64 `json:"size"`
+	Bold          bool    `json:"bold"`
+	Italic        bool    `json:"italic"`
+	Underline     string  `json:"underline"`
+	Strikethrough bool    `json:"strikethrough"`
+	Color         string  `json:"color"`
+}
+
+// CellFillStyle describes cell fill formatting metadata.
+type CellFillStyle struct {
+	Type    string   `json:"type"`
+	Pattern int      `json:"pattern"`
+	Color   string   `json:"color"`
+	Colors  []string `json:"colors"`
+}
+
+// CellAlignmentStyle describes cell text alignment metadata.
+type CellAlignmentStyle struct {
+	Horizontal   string `json:"horizontal"`
+	Vertical     string `json:"vertical"`
+	WrapText     bool   `json:"wrapText"`
+	TextRotation int    `json:"textRotation"`
+}
+
+// CellBorderStyle describes one side of cell border formatting metadata.
+type CellBorderStyle struct {
+	Side  string `json:"side"`
+	Style int    `json:"style"`
+	Color string `json:"color"`
+}
+
+// CellRenderStyle describes display-only cell style metadata derived by the backend.
+type CellRenderStyle struct {
+	TextColor    string `json:"textColor"`
+	TextAdjusted bool   `json:"textAdjusted"`
+}
+
 var englishNumberFormats = map[int]string{
 	0:  "general",
 	1:  "0",
@@ -178,4 +230,76 @@ func cssColor(color string) string {
 	}
 
 	return "#" + strings.ToUpper(trimmedColor)
+}
+
+func darkTextColor(sourceText rgbColor, background rgbColor) (rgbColor, bool) {
+	if contrastRatio(sourceText, background) >= minimumCellTextContrast {
+		return sourceText, false
+	}
+
+	// Move toward the endpoint with stronger contrast against the fill.
+	target := whiteRGB
+	if contrastRatio(blackRGB, background) > contrastRatio(whiteRGB, background) {
+		target = blackRGB
+	}
+
+	if mixedColor, ok := mixColorToContrast(sourceText, target, background); ok {
+		return mixedColor, true
+	}
+
+	fallback := lightThemeGridTextRGB
+	if contrastRatio(darkThemeGridTextRGB, background) >= contrastRatio(lightThemeGridTextRGB, background) {
+		fallback = darkThemeGridTextRGB
+	}
+
+	if contrastRatio(fallback, background) >= minimumCellTextContrast {
+		return fallback, true
+	}
+	if contrastRatio(blackRGB, background) > contrastRatio(whiteRGB, background) {
+		return blackRGB, true
+	}
+
+	return whiteRGB, true
+}
+
+func (c *CellStyle) render(effectiveTheme AppearanceTheme) {
+	if effectiveTheme != AppearanceThemeDark {
+		// Light mode leaves workbook-authored font colors in charge.
+		c.Render = CellRenderStyle{}
+		return
+	}
+
+	background := c.renderBackground()
+	textColor := c.renderTextColor(background)
+
+	readableColor, adjusted := darkTextColor(textColor, background)
+	c.Render.TextColor = readableColor.cssColor()
+	c.Render.TextAdjusted = adjusted
+}
+
+func (c *CellStyle) renderBackground() rgbColor {
+	if color, err := parseCSSHexColor(c.Fill.Color); err == nil {
+		return color
+	}
+
+	for _, fillColor := range c.Fill.Colors {
+		if color, err := parseCSSHexColor(fillColor); err == nil {
+			return color
+		}
+	}
+
+	return darkGridSurfaceRGB
+}
+
+func (c *CellStyle) renderTextColor(background rgbColor) rgbColor {
+	if color, err := parseCSSHexColor(c.Font.Color); err == nil {
+		return color
+	}
+
+	// Missing font colors behave like automatic text.
+	if contrastRatio(darkThemeGridTextRGB, background) >= contrastRatio(lightThemeGridTextRGB, background) {
+		return darkThemeGridTextRGB
+	}
+
+	return lightThemeGridTextRGB
 }

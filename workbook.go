@@ -78,10 +78,12 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Replacing workbook/view should not reset the runtime appearance choice.
 	a.state = AppState{
-		Workbook: workbook,
-		View:     view,
-		Status:   AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Workbook:   workbook,
+		View:       view,
+		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Appearance: normalizeAppearanceState(a.state.Appearance),
 	}
 
 	return cloneAppState(a.state)
