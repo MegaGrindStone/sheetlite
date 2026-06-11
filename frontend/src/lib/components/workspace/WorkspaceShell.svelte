@@ -2,13 +2,23 @@
 	import { onMount } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import {
+		applyAppearanceAttributes,
+		detectSystemTheme,
+		readPersistedAppearanceMode,
+		subscribeToSystemThemeChanges,
+		writePersistedAppearanceMode,
+		type AppearanceMode
+	} from '$lib/appearance.svelte';
+	import {
+		InitializeAppearance,
 		OpenDroppedFiles,
 		OpenWorkbook,
 		SelectCell,
 		SetActiveSheet,
+		SetAppearanceMode,
 		SetScrollPosition,
-		SetZoom,
-		State
+		SetSystemTheme,
+		SetZoom
 	} from '$lib/wailsjs/go/main/App';
 	import type { main } from '$lib/wailsjs/go/models';
 	import { OnFileDrop, OnFileDropOff } from '$lib/wailsjs/runtime/runtime';
@@ -28,6 +38,7 @@
 	const workbook = $derived(appState?.workbook);
 	const view = $derived(appState?.view);
 	const status = $derived(appState?.status);
+	const appearance = $derived(appState?.appearance);
 	const activeSheet = $derived(
 		workbook?.sheets?.find((sheet) => sheet.name === view?.activeSheetName) ?? workbook?.sheets?.[0]
 	);
@@ -35,15 +46,28 @@
 		activeSheet?.cells?.find((cell) => cell.ref === view?.activeCell?.ref)
 	);
 
-	async function updateSnapshot(command: StateCommand): Promise<void> {
+	function acceptSnapshot(nextState: main.AppState): void {
+		if (!isMounted) {
+			return;
+		}
+
+		appState = nextState;
+		applyAppearanceAttributes(nextState.appearance);
+	}
+
+	async function runStateCommand(command: StateCommand): Promise<main.AppState | null> {
 		try {
 			const nextState = await command();
-			if (isMounted) {
-				appState = nextState;
-			}
+			acceptSnapshot(nextState);
+			return nextState;
 		} catch (error) {
 			console.warn('Wails state command failed.', error);
+			return null;
 		}
+	}
+
+	async function updateSnapshot(command: StateCommand): Promise<void> {
+		await runStateCommand(command);
 	}
 
 	function openWorkbook(): Promise<void> {
@@ -64,6 +88,13 @@
 
 	function setZoom(percent: number): Promise<void> {
 		return updateSnapshot(() => SetZoom(percent));
+	}
+
+	async function setAppearanceMode(mode: AppearanceMode): Promise<void> {
+		const nextState = await runStateCommand(() => SetAppearanceMode(mode));
+		if (nextState) {
+			writePersistedAppearanceMode(mode);
+		}
 	}
 
 	function resetDragState(): void {
@@ -116,7 +147,12 @@
 
 	onMount(() => {
 		isMounted = true;
-		void updateSnapshot(() => State());
+		void updateSnapshot(() =>
+			InitializeAppearance(readPersistedAppearanceMode(), detectSystemTheme())
+		);
+		const unsubscribeSystemTheme = subscribeToSystemThemeChanges((theme) => {
+			void updateSnapshot(() => SetSystemTheme(theme));
+		});
 
 		let fileDropRegistered = false;
 		try {
@@ -128,6 +164,7 @@
 
 		return () => {
 			isMounted = false;
+			unsubscribeSystemTheme();
 			resetDragState();
 
 			if (fileDropRegistered) {
@@ -148,7 +185,13 @@
 >
 	<!-- Top Chrome -->
 	<header class="top-chrome" aria-label="Top chrome">
-		<TopChrome {workbook} {status} onOpenWorkbook={openWorkbook} />
+		<TopChrome
+			{workbook}
+			{status}
+			{appearance}
+			onOpenWorkbook={openWorkbook}
+			onSetAppearanceMode={setAppearanceMode}
+		/>
 	</header>
 
 	<!-- Formula/Control Strip -->

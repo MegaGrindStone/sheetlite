@@ -1,5 +1,21 @@
 export namespace main {
 	
+	export class AppearanceState {
+	    mode: string;
+	    systemTheme: string;
+	    effectiveTheme: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppearanceState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.systemTheme = source["systemTheme"];
+	        this.effectiveTheme = source["effectiveTheme"];
+	    }
+	}
 	export class AppStatus {
 	    kind: string;
 	    message: string;
@@ -67,6 +83,20 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class CellRenderStyle {
+	    textColor: string;
+	    textAdjusted: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CellRenderStyle(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.textColor = source["textColor"];
+	        this.textAdjusted = source["textAdjusted"];
+	    }
 	}
 	export class CellBorderStyle {
 	    side: string;
@@ -152,6 +182,7 @@ export namespace main {
 	    fill: CellFillStyle;
 	    alignment: CellAlignmentStyle;
 	    borders: CellBorderStyle[];
+	    render: CellRenderStyle;
 	
 	    static createFrom(source: any = {}) {
 	        return new CellStyle(source);
@@ -166,6 +197,7 @@ export namespace main {
 	        this.fill = this.convertValues(source["fill"], CellFillStyle);
 	        this.alignment = this.convertValues(source["alignment"], CellAlignmentStyle);
 	        this.borders = this.convertValues(source["borders"], CellBorderStyle);
+	        this.render = this.convertValues(source["render"], CellRenderStyle);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -430,6 +462,7 @@ export namespace main {
 	    workbook: WorkbookState;
 	    view: WorkbookViewState;
 	    status: AppStatus;
+	    appearance: AppearanceState;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppState(source);
@@ -440,6 +473,7 @@ export namespace main {
 	        this.workbook = this.convertValues(source["workbook"], WorkbookState);
 	        this.view = this.convertValues(source["view"], WorkbookViewState);
 	        this.status = this.convertValues(source["status"], AppStatus);
+	        this.appearance = this.convertValues(source["appearance"], AppearanceState);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -460,6 +494,8 @@ export namespace main {
 		    return a;
 		}
 	}
+	
+	
 	
 	
 	

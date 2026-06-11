@@ -1,34 +1,34 @@
 <script lang="ts">
-	import { appearanceState } from '$lib/appearance.svelte';
+	import { appearanceOptions, isAppearanceMode, type AppearanceMode } from '$lib/appearance.svelte';
+	import type { main } from '$lib/wailsjs/go/models';
+
+	type Props = {
+		appearance?: main.AppearanceState;
+		onSetAppearanceMode?: (mode: AppearanceMode) => Promise<void> | void;
+	};
+
+	let { appearance, onSetAppearanceMode }: Props = $props();
+
+	const activeMode = $derived(isAppearanceMode(appearance?.mode) ? appearance.mode : 'system');
+
+	function handleModeSelect(mode: AppearanceMode): void {
+		void onSetAppearanceMode?.(mode);
+	}
 </script>
 
 <div class="appearance-control">
 	<span class="control-label" id="appearance-group-label">Appearance</span>
 	<div class="segmented-control" role="group" aria-labelledby="appearance-group-label">
-		<button
-			type="button"
-			class="control-btn {appearanceState.mode === 'system' ? 'active' : ''}"
-			aria-pressed={appearanceState.mode === 'system'}
-			onclick={() => appearanceState.setMode('system')}
-		>
-			System
-		</button>
-		<button
-			type="button"
-			class="control-btn {appearanceState.mode === 'light' ? 'active' : ''}"
-			aria-pressed={appearanceState.mode === 'light'}
-			onclick={() => appearanceState.setMode('light')}
-		>
-			Light
-		</button>
-		<button
-			type="button"
-			class="control-btn {appearanceState.mode === 'dark' ? 'active' : ''}"
-			aria-pressed={appearanceState.mode === 'dark'}
-			onclick={() => appearanceState.setMode('dark')}
-		>
-			Dark
-		</button>
+		{#each appearanceOptions as option (option.value)}
+			<button
+				type="button"
+				class="control-btn {activeMode === option.value ? 'active' : ''}"
+				aria-pressed={activeMode === option.value}
+				onclick={() => handleModeSelect(option.value)}
+			>
+				{option.label}
+			</button>
+		{/each}
 	</div>
 </div>
 

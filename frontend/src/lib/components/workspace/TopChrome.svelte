@@ -1,15 +1,18 @@
 <script lang="ts">
 	import type { Attachment } from 'svelte/attachments';
+	import type { AppearanceMode } from '$lib/appearance.svelte';
 	import type { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
 
 	type Props = {
 		workbook?: main.WorkbookState;
 		status?: main.AppStatus;
+		appearance?: main.AppearanceState;
 		onOpenWorkbook?: () => Promise<void> | void;
+		onSetAppearanceMode?: (mode: AppearanceMode) => Promise<void> | void;
 	};
 
-	let { workbook, status, onOpenWorkbook }: Props = $props();
+	let { workbook, status, appearance, onOpenWorkbook, onSetAppearanceMode }: Props = $props();
 	let fileMenuOpen = $state(false);
 	let openingWorkbook = $state(false);
 
@@ -122,7 +125,7 @@
 
 		<!-- Right Side Controls -->
 		<div class="right-section">
-			<AppearanceControl />
+			<AppearanceControl {appearance} {onSetAppearanceMode} />
 		</div>
 	</div>
 

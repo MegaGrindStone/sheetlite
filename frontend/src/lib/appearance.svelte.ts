@@ -1,9 +1,16 @@
 export type AppearanceMode = 'light' | 'dark' | 'system';
-export type EffectiveTheme = 'light' | 'dark';
+export type AppearanceTheme = 'light' | 'dark';
+export type EffectiveTheme = AppearanceTheme;
 
 export interface AppearanceOption {
 	value: AppearanceMode;
 	label: string;
+}
+
+export interface BackendAppearance {
+	mode?: string;
+	systemTheme?: string;
+	effectiveTheme?: string;
 }
 
 export const appearanceOptions: AppearanceOption[] = [
@@ -15,27 +22,36 @@ export const appearanceOptions: AppearanceOption[] = [
 const STORAGE_KEY = 'sheetlite_appearance_mode';
 const MEDIA_QUERY_DARK = '(prefers-color-scheme: dark)';
 
-function getStoredMode(): AppearanceMode {
+export function isAppearanceMode(value: unknown): value is AppearanceMode {
+	return value === 'light' || value === 'dark' || value === 'system';
+}
+
+export function isAppearanceTheme(value: unknown): value is AppearanceTheme {
+	return value === 'light' || value === 'dark';
+}
+
+export function readPersistedAppearanceMode(): AppearanceMode {
 	try {
 		if (typeof localStorage !== 'undefined') {
-			const val = localStorage.getItem(STORAGE_KEY);
-			if (val === 'light' || val === 'dark' || val === 'system') {
-				return val;
+			const value = localStorage.getItem(STORAGE_KEY);
+			if (isAppearanceMode(value)) {
+				return value;
 			}
 		}
 	} catch {
-		// Silently fallback in restricted/sandboxed environments
+		// Silently fallback in restricted/sandboxed environments.
 	}
+
 	return 'system';
 }
 
-function setStoredMode(mode: AppearanceMode): void {
+export function writePersistedAppearanceMode(mode: AppearanceMode): void {
 	try {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem(STORAGE_KEY, mode);
 		}
 	} catch {
-		// Silently fail in restricted/sandboxed environments
+		// Silently fail in restricted/sandboxed environments.
 	}
 }
 
@@ -43,71 +59,43 @@ function supportsMatchMedia(): boolean {
 	return typeof window !== 'undefined' && typeof window.matchMedia === 'function';
 }
 
-export class AppearanceState {
-	mode = $state<AppearanceMode>('system');
-	resolvedTheme = $state<EffectiveTheme>('light');
-
-	setMode(newMode: AppearanceMode) {
-		this.mode = newMode;
-		setStoredMode(newMode);
-		this.updateTheme();
+export function detectSystemTheme(): AppearanceTheme {
+	if (!supportsMatchMedia()) {
+		return 'light';
 	}
 
-	updateTheme() {
-		if (typeof window === 'undefined') return;
-
-		let effective: EffectiveTheme;
-		if (this.mode === 'system') {
-			if (supportsMatchMedia()) {
-				const mediaQuery = window.matchMedia(MEDIA_QUERY_DARK);
-				effective = mediaQuery.matches ? 'dark' : 'light';
-			} else {
-				effective = 'light';
-			}
-		} else {
-			effective = this.mode === 'light' ? 'light' : 'dark';
-		}
-
-		this.resolvedTheme = effective;
-
-		// Apply root attributes
-		if (typeof document !== 'undefined') {
-			document.documentElement.dataset.theme = effective;
-			document.documentElement.dataset.appearance = this.mode;
-		}
-	}
+	return window.matchMedia(MEDIA_QUERY_DARK).matches ? 'dark' : 'light';
 }
 
-// Export a singleton instance
-export const appearanceState = new AppearanceState();
-
-export function initializeAppearance() {
-	if (typeof window === 'undefined') {
-		return () => {};
-	}
-
-	// 1. Load persisted mode
-	appearanceState.mode = getStoredMode();
-
-	// 2. Initial application of the theme
-	appearanceState.updateTheme();
-
-	// 3. Listen to media query changes (prefers-color-scheme)
+export function subscribeToSystemThemeChanges(
+	onChange: (theme: AppearanceTheme) => void
+): () => void {
 	if (!supportsMatchMedia()) {
 		return () => {};
 	}
 
 	const mediaQuery = window.matchMedia(MEDIA_QUERY_DARK);
-	const handleMediaChange = () => {
-		if (appearanceState.mode === 'system') {
-			appearanceState.updateTheme();
-		}
+	const handleMediaChange = (event: MediaQueryListEvent): void => {
+		onChange(event.matches ? 'dark' : 'light');
 	};
 
 	mediaQuery.addEventListener('change', handleMediaChange);
 
-	// Return a cleanup function
 	return () => {
 		mediaQuery.removeEventListener('change', handleMediaChange);
 	};
+}
+
+export function applyAppearanceAttributes(appearance?: BackendAppearance | null): void {
+	if (typeof document === 'undefined' || !appearance) {
+		return;
+	}
+
+	const mode = isAppearanceMode(appearance.mode) ? appearance.mode : 'system';
+	const effectiveTheme = isAppearanceTheme(appearance.effectiveTheme)
+		? appearance.effectiveTheme
+		: 'light';
+
+	document.documentElement.dataset.theme = effectiveTheme;
+	document.documentElement.dataset.appearance = mode;
 }
