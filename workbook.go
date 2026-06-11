@@ -90,6 +90,7 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
 		Appearance: appearance,
 	}
+	a.pendingCellEdits = map[string]map[string]string{}
 
 	return cloneAppState(a.state)
 }

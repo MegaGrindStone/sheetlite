@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -188,6 +189,136 @@ func loadCell(
 		Kind:       kind,
 		StyleID:    styleID,
 	}, true, nil
+}
+
+func setSheetCellValue(sheet *WorkbookSheet, address CellAddress, value string) (bool, error) {
+	if value == "" {
+		return clearSheetCellValue(sheet, address), nil
+	}
+
+	expandedBounds, err := expandedSheetBounds(sheet.Bounds, address)
+	if err != nil {
+		return false, err
+	}
+
+	index := slices.IndexFunc(sheet.Cells, func(cell CellData) bool {
+		return cell.Ref == address.Ref
+	})
+	if index >= 0 {
+		oldCell := sheet.Cells[index]
+		nextCell := oldCell
+		nextCell.Ref = address.Ref
+		nextCell.Row = address.Row
+		nextCell.Column = address.Column
+		nextCell.Value = value
+		nextCell.RawValue = value
+		nextCell.Formula = ""
+		nextCell.HasFormula = false
+		nextCell.Kind = "string"
+
+		// Formula metadata and bounds can make an edit meaningful even when text matches.
+		changed := nextCell != oldCell || expandedBounds != sheet.Bounds
+		if !changed {
+			return false, nil
+		}
+
+		sheet.Cells[index] = nextCell
+		sheet.Bounds = expandedBounds
+		slices.SortFunc(sheet.Cells, func(left CellData, right CellData) int {
+			if left.Row != right.Row {
+				return left.Row - right.Row
+			}
+
+			return left.Column - right.Column
+		})
+
+		return true, nil
+	}
+
+	sheet.Cells = append(sheet.Cells, CellData{
+		Ref:      address.Ref,
+		Row:      address.Row,
+		Column:   address.Column,
+		Value:    value,
+		RawValue: value,
+		Kind:     "string",
+	})
+	sheet.Bounds = expandedBounds
+	slices.SortFunc(sheet.Cells, func(left CellData, right CellData) int {
+		if left.Row != right.Row {
+			return left.Row - right.Row
+		}
+
+		return left.Column - right.Column
+	})
+
+	return true, nil
+}
+
+func clearSheetCellValue(sheet *WorkbookSheet, address CellAddress) bool {
+	index := slices.IndexFunc(sheet.Cells, func(cell CellData) bool {
+		return cell.Ref == address.Ref
+	})
+	if index < 0 {
+		return false
+	}
+
+	oldCell := sheet.Cells[index]
+	nextCell := oldCell
+	nextCell.Ref = address.Ref
+	nextCell.Row = address.Row
+	nextCell.Column = address.Column
+	nextCell.Value = ""
+	nextCell.RawValue = ""
+	nextCell.Formula = ""
+	nextCell.HasFormula = false
+	nextCell.Kind = ""
+
+	// Styled blanks stay in the sparse model so clears do not drop formatting.
+	if nextCell.StyleID == 0 {
+		sheet.Cells = append(sheet.Cells[:index], sheet.Cells[index+1:]...)
+
+		return true
+	}
+
+	if nextCell == oldCell {
+		return false
+	}
+
+	sheet.Cells[index] = nextCell
+	slices.SortFunc(sheet.Cells, func(left CellData, right CellData) int {
+		if left.Row != right.Row {
+			return left.Row - right.Row
+		}
+
+		return left.Column - right.Column
+	})
+
+	return true
+}
+
+func expandedSheetBounds(current CellRange, address CellAddress) (CellRange, error) {
+	bounds := cellBounds{}
+	if current.valid() {
+		bounds.addRange(current)
+	} else {
+		bounds.addRange(a1Range())
+	}
+	bounds.addAddress(address)
+
+	return bounds.rangeValue()
+}
+
+func (c CellRange) valid() bool {
+	return c.Start.valid() &&
+		c.End.valid() &&
+		c.Start.Row <= c.End.Row &&
+		c.Start.Column <= c.End.Column
+}
+
+func (c CellAddress) valid() bool {
+	return c.Row >= minExcelRow && c.Row <= maxExcelRow &&
+		c.Column >= minExcelColumn && c.Column <= maxExcelColumn
 }
 
 func parseCellRangeRef(ref string) (CellRange, error) {

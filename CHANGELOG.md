@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stateful App struct with synchronized AppState and view-model methods
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom),
   with SelectCell synchronizing the selection range
+- `SetCellValue` cell editing method with pending-edit tracking,
+  input validation, formula-clearing and style-preserving edit
+  semantics, and styled-blank retention on clear
 - xlsx workbook loading via excelize with full cell, sheet, and style support
   (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
 - BottomBar component with interactive sheet tabs rendered from workbook

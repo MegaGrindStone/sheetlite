@@ -7,11 +7,12 @@ const (
 	statusKindLoading = "loading"
 	statusKindError   = "error"
 
-	defaultStatusMessage = "Ready"
-	defaultWorkbookTitle = "Untitled"
-	defaultSheetName     = "Sheet 1"
-	defaultSheetIndex    = 0
-	sheetStateVisible    = "visible"
+	defaultStatusMessage        = "Ready"
+	unsavedChangesStatusMessage = "Unsaved changes"
+	defaultWorkbookTitle        = "Untitled"
+	defaultSheetName            = "Sheet 1"
+	defaultSheetIndex           = 0
+	sheetStateVisible           = "visible"
 
 	minExcelRow    = 1
 	maxExcelRow    = 1048576

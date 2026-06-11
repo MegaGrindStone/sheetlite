@@ -10,14 +10,15 @@ import (
 
 // App owns Wails runtime context and the current application state snapshot.
 type App struct {
-	mu    sync.RWMutex
-	ctx   context.Context
-	state AppState
+	mu               sync.RWMutex
+	ctx              context.Context
+	state            AppState
+	pendingCellEdits map[string]map[string]string
 }
 
 // NewApp creates a new App application struct with neutral startup state.
 func NewApp() *App {
-	return &App{state: initialAppState()}
+	return &App{state: initialAppState(), pendingCellEdits: map[string]map[string]string{}}
 }
 
 // startup is called when the app starts. The context is saved for runtime calls.
@@ -29,6 +30,9 @@ func (a *App) startup(ctx context.Context) {
 	// Keep tests/free-standing construction usable if startup is called on a zero App.
 	if a.state.Status.Kind == "" {
 		a.state = initialAppState()
+	}
+	if a.pendingCellEdits == nil {
+		a.pendingCellEdits = map[string]map[string]string{}
 	}
 }
 
@@ -172,6 +176,83 @@ func (a *App) SelectCell(cellRef string) AppState {
 	a.state.View.ActiveCell = address
 	a.state.View.Selection = CellRange{Ref: address.Ref, Start: address, End: address}
 	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
+// SetCellValue applies one literal text edit to a cell in the current workbook.
+func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppState {
+	trimmedSheetName := strings.TrimSpace(sheetName)
+	address, validAddress := parseCellAddress(cellRef)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Keep zero-value App structs usable in focused backend tests and command calls.
+	if a.state.Status.Kind == "" {
+		a.state = initialAppState()
+	}
+
+	if trimmedSheetName == "" {
+		a.state.Status = AppStatus{Kind: statusKindError, Message: "Sheet name is required.", Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	if !validAddress {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("Cell reference %q is invalid.", cellRef),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	sheetIndex := slices.IndexFunc(a.state.Workbook.Sheets, func(sheet WorkbookSheet) bool {
+		return sheet.Name == trimmedSheetName
+	})
+	if sheetIndex < 0 {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("Sheet %q was not found.", trimmedSheetName),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	changed, err := setSheetCellValue(&a.state.Workbook.Sheets[sheetIndex], address, value)
+	if err != nil {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("Could not edit %s on sheet %q: %v", address.Ref, trimmedSheetName, err),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	if changed {
+		a.state.Workbook.Dirty = true
+		// Keep the exact edit for later save logic, including empty clears.
+		if a.pendingCellEdits == nil {
+			a.pendingCellEdits = map[string]map[string]string{}
+		}
+		if a.pendingCellEdits[trimmedSheetName] == nil {
+			a.pendingCellEdits[trimmedSheetName] = map[string]string{}
+		}
+		a.pendingCellEdits[trimmedSheetName][address.Ref] = value
+		a.state.Status = AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	message := defaultStatusMessage
+	if a.state.Workbook.Dirty {
+		message = unsavedChangesStatusMessage
+	}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: message, Busy: false}
 
 	return cloneAppState(a.state)
 }
