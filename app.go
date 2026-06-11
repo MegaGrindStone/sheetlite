@@ -351,7 +351,7 @@ func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
 		return false
 	}
 
-	switch choice {
+	switch normalizeDirtyPromptChoice(choice) {
 	case dirtyPromptSave:
 		state := a.SaveWorkbook()
 
@@ -365,6 +365,21 @@ func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func normalizeDirtyPromptChoice(choice string) string {
+	// Wails QuestionDialog returns native Yes/No on Linux and Windows even when
+	// custom button labels are supplied; macOS returns the configured labels.
+	switch strings.ToLower(strings.TrimSpace(choice)) {
+	case strings.ToLower(dirtyPromptSave), "yes":
+		return dirtyPromptSave
+	case strings.ToLower(dirtyPromptDontSave), "no":
+		return dirtyPromptDontSave
+	case strings.ToLower(dirtyPromptCancel), "":
+		return dirtyPromptCancel
+	default:
+		return dirtyPromptCancel
 	}
 }
 

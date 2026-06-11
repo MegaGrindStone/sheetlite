@@ -18,6 +18,14 @@ export function OpenWorkbookPath(arg1) {
   return window['go']['main']['App']['OpenWorkbookPath'](arg1);
 }
 
+export function SaveWorkbook() {
+  return window['go']['main']['App']['SaveWorkbook']();
+}
+
+export function SaveWorkbookAs() {
+  return window['go']['main']['App']['SaveWorkbookAs']();
+}
+
 export function SelectCell(arg1) {
   return window['go']['main']['App']['SelectCell'](arg1);
 }
@@ -28,6 +36,10 @@ export function SetActiveSheet(arg1) {
 
 export function SetAppearanceMode(arg1) {
   return window['go']['main']['App']['SetAppearanceMode'](arg1);
+}
+
+export function SetCellValue(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetCellValue'](arg1, arg2, arg3);
 }
 
 export function SetScrollPosition(arg1, arg2) {

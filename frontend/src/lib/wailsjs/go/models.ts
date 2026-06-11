@@ -419,10 +419,10 @@ export namespace main {
 		}
 	}
 	export class WorkbookState {
-	    hasWorkbook: boolean;
 	    title: string;
 	    filePath: string;
 	    fileName: string;
+	    dirty: boolean;
 	    sheets: WorkbookSheet[];
 	    styles: CellStyle[];
 	
@@ -432,10 +432,10 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.hasWorkbook = source["hasWorkbook"];
 	        this.title = source["title"];
 	        this.filePath = source["filePath"];
 	        this.fileName = source["fileName"];
+	        this.dirty = source["dirty"];
 	        this.sheets = this.convertValues(source["sheets"], WorkbookSheet);
 	        this.styles = this.convertValues(source["styles"], CellStyle);
 	    }

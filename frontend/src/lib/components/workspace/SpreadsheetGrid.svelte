@@ -1,13 +1,32 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { main } from '$lib/wailsjs/go/models';
+	import type { CellEditSession, CellEditSource } from './cellEditSession';
 
 	type Props = {
 		activeSheet?: main.WorkbookSheet;
 		view?: main.WorkbookViewState;
 		styles?: main.CellStyle[];
 		dragActive?: boolean;
+		editSession?: CellEditSession | null;
+		editCommitting?: boolean;
 		onSelectCell?: (cellRef: string) => Promise<void> | void;
+		onBeginCellEdit?: (
+			source: CellEditSource,
+			sheetName: string,
+			cellRef: string,
+			value: string
+		) => void;
+		onUpdateCellEdit?: (
+			source: CellEditSource,
+			sheetName: string,
+			cellRef: string,
+			value: string
+		) => void;
+		onCancelCellEdit?: (sheetName?: string, cellRef?: string) => void;
+		onCommitCellEdit?: (sheetName: string, cellRef: string, value: string) => Promise<void> | void;
 		onSetScrollPosition?: (topRow: number, leftColumn: number) => Promise<void> | void;
 	};
 
@@ -26,9 +45,18 @@
 		view,
 		styles = [],
 		dragActive = false,
+		editSession,
+		editCommitting = false,
 		onSelectCell,
+		onBeginCellEdit,
+		onUpdateCellEdit,
+		onCancelCellEdit,
+		onCommitCellEdit,
 		onSetScrollPosition
 	}: Props = $props();
+
+	let selectEditorTextOnFocus = true;
+	let skipNextEditorBlurCommit = false;
 
 	// Helper to generate spreadsheet column labels (A, B, ..., Z, AA, AB, ..., AN)
 	function getColLabel(index: number): string {
@@ -306,6 +334,28 @@
 		return ref;
 	}
 
+	function getCellDisplayText(
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined
+	): string {
+		if (cell?.value) {
+			return cell.value;
+		}
+
+		return mergedInfo?.value ?? '';
+	}
+
+	function getCellEditText(
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined
+	): string {
+		if (cell?.hasFormula && cell.formula) {
+			return cell.formula;
+		}
+
+		return getCellDisplayText(cell, mergedInfo);
+	}
+
 	const activeCellRef = $derived(view?.activeCell?.ref ?? 'A1');
 	const activeColumnLabel = $derived(getColLabel((view?.activeCell?.column ?? 1) - 1));
 	const activeRowIndex = $derived(view?.activeCell?.row ?? 1);
@@ -316,6 +366,7 @@
 	const rows = $derived(createRows(rowCount));
 	const cellsByRef = $derived(createCellLookup(activeSheet));
 	const selectCommandWired = $derived(Boolean(onSelectCell));
+	const cellEditCommandWired = $derived(Boolean(onCommitCellEdit));
 	const scrollCommandWired = $derived(Boolean(onSetScrollPosition));
 
 	const mergedLookups = $derived(createMergedLookups(activeSheet));
@@ -364,6 +415,189 @@
 	const viewportLabel = $derived(
 		`Spreadsheet grid for ${activeSheetName}; active cell ${activeCellRef}; displayed workbook values are rendered when loaded.`
 	);
+
+	function canEditCell(ref: string): boolean {
+		return (
+			Boolean(onBeginCellEdit && onUpdateCellEdit && onCommitCellEdit) &&
+			Boolean(activeSheetName) &&
+			Boolean(ref) &&
+			!editCommitting
+		);
+	}
+
+	function isDraftCell(ref: string): boolean {
+		return editSession?.sheetName === activeSheetName && editSession.cellRef === ref;
+	}
+
+	function isInlineEditingCell(ref: string): boolean {
+		return isDraftCell(ref) && editSession?.source === 'grid';
+	}
+
+	function getLiveCellDisplayText(
+		ref: string,
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined
+	): string {
+		if (isDraftCell(ref) && editSession) {
+			return editSession.value;
+		}
+
+		return getCellDisplayText(cell, mergedInfo);
+	}
+
+	const focusInlineEditor: Attachment<HTMLInputElement> = (node) => {
+		queueMicrotask(() => {
+			node.focus();
+			if (selectEditorTextOnFocus) {
+				node.select();
+				return;
+			}
+
+			const cursorPosition = node.value.length;
+			node.setSelectionRange(cursorPosition, cursorPosition);
+		});
+	};
+
+	function beginInlineEdit(
+		ref: string,
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined,
+		initialText?: string,
+		selectText = true
+	): void {
+		if (!canEditCell(ref)) {
+			return;
+		}
+
+		const existingDraft = isDraftCell(ref) && editSession ? editSession.value : undefined;
+		selectEditorTextOnFocus = selectText;
+		onBeginCellEdit?.(
+			'grid',
+			activeSheetName,
+			ref,
+			initialText ?? existingDraft ?? getCellEditText(cell, mergedInfo)
+		);
+		onSelectCell?.(ref);
+	}
+
+	function cancelInlineEdit(): void {
+		skipNextEditorBlurCommit = true;
+		onCancelCellEdit?.(editSession?.sheetName, editSession?.cellRef);
+	}
+
+	async function commitInlineEdit(): Promise<void> {
+		if (editCommitting || !editSession || editSession.source !== 'grid') {
+			return;
+		}
+
+		if (!onCommitCellEdit || !editSession.sheetName || !editSession.cellRef) {
+			cancelInlineEdit();
+			return;
+		}
+
+		const cellRef = editSession.cellRef;
+		const sheetName = editSession.sheetName;
+		const nextValue = editSession.value;
+		const shouldSelectAfterCommit = activeCellRef !== cellRef;
+		const originalValue = getCellEditText(cellsByRef[cellRef], mergedCellLookup.get(cellRef));
+
+		if (nextValue === originalValue) {
+			onCancelCellEdit?.(sheetName, cellRef);
+			return;
+		}
+
+		await onCommitCellEdit(sheetName, cellRef, nextValue);
+		if (shouldSelectAfterCommit) {
+			await onSelectCell?.(cellRef);
+		}
+	}
+
+	function shouldStartEditFromKey(event: KeyboardEvent): boolean {
+		return (
+			event.key.length === 1 &&
+			event.key !== ' ' &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey
+		);
+	}
+
+	function handleCellKeydown(
+		event: KeyboardEvent,
+		ref: string,
+		cell: main.CellData | undefined,
+		mergedInfo: MergedInfo | undefined
+	): void {
+		if (event.key === 'F2') {
+			event.preventDefault();
+			beginInlineEdit(ref, cell, mergedInfo);
+			return;
+		}
+
+		if (shouldStartEditFromKey(event)) {
+			event.preventDefault();
+			beginInlineEdit(ref, cell, mergedInfo, event.key, false);
+			return;
+		}
+
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			onSelectCell?.(ref);
+		}
+	}
+
+	function handleEditorInput(event: Event): void {
+		if (!editSession) {
+			return;
+		}
+
+		onUpdateCellEdit?.(
+			'grid',
+			editSession.sheetName,
+			editSession.cellRef,
+			(event.currentTarget as HTMLInputElement).value
+		);
+	}
+
+	function handleEditorKeydown(event: KeyboardEvent): void {
+		event.stopPropagation();
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void commitInlineEdit();
+			return;
+		}
+
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelInlineEdit();
+			(event.currentTarget as HTMLInputElement).blur();
+		}
+	}
+
+	function handleEditorBlur(): void {
+		if (skipNextEditorBlurCommit) {
+			skipNextEditorBlurCommit = false;
+			return;
+		}
+
+		void commitInlineEdit();
+	}
+
+	async function focusInitialActiveCell(): Promise<void> {
+		await tick();
+		if (document.activeElement && document.activeElement !== document.body) {
+			return;
+		}
+
+		document
+			.querySelector<HTMLElement>('.spreadsheet-viewport .grid-cell.active-cell')
+			?.focus({ preventScroll: true });
+	}
+
+	onMount(() => {
+		void focusInitialActiveCell();
+	});
 
 	function handleScroll(event: Event) {
 		if (!onSetScrollPosition) return;
@@ -427,6 +661,7 @@
 		aria-colcount={columnCount + 1}
 		title={metadataLabel}
 		data-select-command-wired={selectCommandWired}
+		data-cell-edit-command-wired={cellEditCommandWired}
 		data-scroll-command-wired={scrollCommandWired}
 		style="
 			grid-template-columns: var(--row-header-width, 40px) {colWidthsCss};
@@ -470,21 +705,22 @@
 				{#if !coveredCells.has(ref) && !hiddenRows.has(row) && !hiddenColumns.has(column.index)}
 					{@const cell = cellsByRef[ref]}
 					{@const mergedInfo = mergedCellLookup.get(ref)}
+					{@const displayText = getLiveCellDisplayText(ref, cell, mergedInfo)}
 					<div
 						class="grid-cell"
 						class:active-cell={ref === activeCellRef}
 						class:selected-cell={isCellSelected(row, column.index) && ref !== activeCellRef}
-						class:has-value={Boolean(cell?.value || mergedInfo?.value)}
+						class:has-value={Boolean(displayText)}
+						class:editing-cell={isInlineEditingCell(ref)}
 						data-cell-ref={ref}
 						data-cell-kind={cell?.kind}
 						title={getGridCellTitle(ref, cell, mergedInfo)}
 						onclick={() => onSelectCell?.(ref)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								onSelectCell?.(ref);
-							}
+						ondblclick={(event) => {
+							event.preventDefault();
+							beginInlineEdit(ref, cell, mergedInfo);
 						}}
+						onkeydown={(event) => handleCellKeydown(event, ref, cell, mergedInfo)}
 						role="gridcell"
 						tabindex="0"
 						aria-selected={isCellSelected(row, column.index)}
@@ -498,10 +734,21 @@
 							{getCellStyles(cell)}
 						"
 					>
-						{#if cell?.value}
-							<span class="cell-value">{cell.value}</span>
-						{:else if mergedInfo?.value}
-							<span class="cell-value">{mergedInfo.value}</span>
+						{#if isInlineEditingCell(ref)}
+							<input
+								{@attach focusInlineEditor}
+								class="cell-editor"
+								type="text"
+								aria-label={`Edit ${ref} in ${activeSheetName}`}
+								value={editSession?.value ?? ''}
+								oninput={handleEditorInput}
+								onkeydown={handleEditorKeydown}
+								onclick={(event) => event.stopPropagation()}
+								ondblclick={(event) => event.stopPropagation()}
+								onblur={handleEditorBlur}
+							/>
+						{:else if displayText}
+							<span class="cell-value">{displayText}</span>
 						{/if}
 					</div>
 				{/if}
@@ -640,6 +887,26 @@
 	}
 
 	.grid-cell.has-value {
+		user-select: text;
+	}
+
+	.grid-cell.editing-cell {
+		padding: 0;
+		position: relative;
+		z-index: 8;
+		box-shadow: inset 0 0 0 2px var(--color-selection-border);
+	}
+
+	.cell-editor {
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		padding: 0 6px;
+		background-color: transparent;
+		border: none;
+		color: inherit;
+		font: inherit;
+		outline: none;
 		user-select: text;
 	}
 

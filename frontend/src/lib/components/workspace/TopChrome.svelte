@@ -4,60 +4,101 @@
 	import type { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
 
+	type FileCommand = 'open' | 'save' | 'save-as';
+
 	type Props = {
 		workbook?: main.WorkbookState;
 		status?: main.AppStatus;
 		appearance?: main.AppearanceState;
 		onOpenWorkbook?: () => Promise<void> | void;
+		onSaveWorkbook?: () => Promise<void> | void;
+		onSaveWorkbookAs?: () => Promise<void> | void;
 		onSetAppearanceMode?: (mode: AppearanceMode) => Promise<void> | void;
 	};
 
-	let { workbook, status, appearance, onOpenWorkbook, onSetAppearanceMode }: Props = $props();
+	let {
+		workbook,
+		status,
+		appearance,
+		onOpenWorkbook,
+		onSaveWorkbook,
+		onSaveWorkbookAs,
+		onSetAppearanceMode
+	}: Props = $props();
 	let fileMenuOpen = $state(false);
-	let openingWorkbook = $state(false);
+	let activeFileCommand = $state<FileCommand | null>(null);
 
 	const documentTitle = $derived(workbook?.title?.trim() || 'Untitled');
+	const workbookReady = $derived(Boolean(workbook));
+	const workbookDirty = $derived(Boolean(workbook?.dirty));
+	const workbookUnsaved = $derived(workbookReady && !workbook?.filePath);
 	const statusKind = $derived(status?.kind ?? 'ready');
 	const statusMessage = $derived(status?.message?.trim() || 'Ready');
-	const statusLabel = $derived(status?.busy ? 'Opening…' : statusMessage);
+	const statusLabel = $derived(status?.busy ? 'Working…' : statusMessage);
 	const statusTitle = $derived(`${statusKind}: ${statusMessage}`);
-	const commandBusy = $derived(Boolean(status?.busy) || openingWorkbook);
+	const commandBusy = $derived(Boolean(status?.busy) || activeFileCommand !== null);
+	const hasFileActions = $derived(Boolean(onOpenWorkbook || onSaveWorkbook || onSaveWorkbookAs));
+	const canUseFileMenu = $derived(hasFileActions && !commandBusy);
 	const canOpenWorkbook = $derived(Boolean(onOpenWorkbook) && !commandBusy);
-	const showFileMenu = $derived(fileMenuOpen && canOpenWorkbook);
+	const canSaveWorkbook = $derived(
+		Boolean(onSaveWorkbook) && workbookReady && !commandBusy && (workbookDirty || workbookUnsaved)
+	);
+	const canSaveWorkbookAs = $derived(Boolean(onSaveWorkbookAs) && workbookReady && !commandBusy);
+	const showFileMenu = $derived(fileMenuOpen && canUseFileMenu);
 	const fileMenuTitle = $derived(
-		!onOpenWorkbook
+		!hasFileActions
 			? 'File menu is unavailable'
 			: commandBusy
-				? 'Workbook open is already in progress'
+				? 'A file command is already in progress'
 				: 'Open File menu'
 	);
-	const openWorkbookLabel = $derived(commandBusy ? 'Opening…' : 'Open');
+	const openWorkbookLabel = $derived(activeFileCommand === 'open' ? 'Opening…' : 'Open');
+	const saveWorkbookLabel = $derived(activeFileCommand === 'save' ? 'Saving…' : 'Save');
+	const saveWorkbookAsLabel = $derived(activeFileCommand === 'save-as' ? 'Saving…' : 'Save As…');
+	const saveWorkbookMeta = $derived(
+		workbookUnsaved ? 'Choose location' : workbookDirty ? 'Write changes' : 'No unsaved changes'
+	);
 
 	function closeFileMenu(): void {
 		fileMenuOpen = false;
 	}
 
 	function toggleFileMenu(): void {
-		if (!canOpenWorkbook) {
+		if (!canUseFileMenu) {
 			return;
 		}
 
 		fileMenuOpen = !showFileMenu;
 	}
 
-	async function handleOpenWorkbook(): Promise<void> {
-		if (!onOpenWorkbook || commandBusy) {
+	async function runFileCommand(
+		command: FileCommand,
+		callback: (() => Promise<void> | void) | undefined
+	): Promise<void> {
+		if (!callback || commandBusy) {
 			return;
 		}
 
 		closeFileMenu();
-		openingWorkbook = true;
+		activeFileCommand = command;
 
 		try {
-			await onOpenWorkbook();
+			await callback();
 		} finally {
-			openingWorkbook = false;
+			activeFileCommand = null;
 		}
+	}
+
+	function handleOpenWorkbook(): Promise<void> {
+		return runFileCommand('open', canOpenWorkbook ? onOpenWorkbook : undefined);
+	}
+
+	function handleSaveWorkbook(): Promise<void> {
+		return runFileCommand('save', canSaveWorkbook ? onSaveWorkbook : undefined);
+	}
+
+	function handleSaveWorkbookAs(): Promise<void> {
+		return runFileCommand('save-as', canSaveWorkbookAs ? onSaveWorkbookAs : undefined);
 	}
 
 	const fileMenuBehavior: Attachment<HTMLDivElement> = (node) => {
@@ -104,6 +145,12 @@
 			<!-- Doc Title Block -->
 			<div class="title-block">
 				<span class="doc-title">{documentTitle}</span>
+				{#if workbookDirty}
+					<span class="dirty-indicator" title="Unsaved changes" aria-label="Unsaved changes">
+						<span class="dirty-dot" aria-hidden="true"></span>
+						<span>Unsaved</span>
+					</span>
+				{/if}
 				<!-- Muted Status Affordance -->
 				<div class="status-affordance" title={statusTitle} data-status-kind={statusKind}>
 					<svg
@@ -141,7 +188,7 @@
 					aria-haspopup="true"
 					aria-expanded={showFileMenu}
 					aria-controls="file-menu-popover"
-					disabled={!canOpenWorkbook}
+					disabled={!canUseFileMenu}
 					title={fileMenuTitle}
 					onclick={toggleFileMenu}
 				>
@@ -158,6 +205,26 @@
 						>
 							<span class="file-menu-command-label">{openWorkbookLabel}</span>
 							<span class="file-menu-command-meta">Excel workbook</span>
+						</button>
+						<div class="file-menu-separator" aria-hidden="true"></div>
+						<button
+							type="button"
+							class="file-menu-command"
+							disabled={!canSaveWorkbook}
+							title={saveWorkbookMeta}
+							onclick={handleSaveWorkbook}
+						>
+							<span class="file-menu-command-label">{saveWorkbookLabel}</span>
+							<span class="file-menu-command-meta">{saveWorkbookMeta}</span>
+						</button>
+						<button
+							type="button"
+							class="file-menu-command"
+							disabled={!canSaveWorkbookAs}
+							onclick={handleSaveWorkbookAs}
+						>
+							<span class="file-menu-command-label">{saveWorkbookAsLabel}</span>
+							<span class="file-menu-command-meta">Choose location</span>
 						</button>
 					</div>
 				{/if}
@@ -404,6 +471,25 @@
 		line-height: 1;
 	}
 
+	.dirty-indicator {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--color-accent);
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1;
+		user-select: none;
+	}
+
+	.dirty-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 9999px;
+		background-color: var(--color-accent);
+		flex-shrink: 0;
+	}
+
 	.status-affordance {
 		display: flex;
 		align-items: center;
@@ -482,12 +568,18 @@
 		top: calc(100% + 6px);
 		left: 0;
 		z-index: 20;
-		min-width: 192px;
+		min-width: 208px;
 		padding: 4px;
 		border: 1px solid var(--color-border);
 		border-radius: 2px;
 		background-color: var(--color-surface);
 		color: var(--color-text);
+	}
+
+	.file-menu-separator {
+		height: 1px;
+		margin: 4px;
+		background-color: var(--color-border);
 	}
 
 	.file-menu-command {
@@ -507,6 +599,16 @@
 
 	.file-menu-command:not(:disabled):hover {
 		background-color: var(--color-surface-hover);
+	}
+
+	.file-menu-command:disabled {
+		background-color: transparent;
+		color: var(--color-disabled-text);
+		opacity: 0.72;
+	}
+
+	.file-menu-command:disabled .file-menu-command-meta {
+		color: var(--color-disabled-text);
 	}
 
 	.file-menu-command-label {

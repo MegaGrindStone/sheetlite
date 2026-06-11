@@ -12,23 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stateful App struct with synchronized AppState and view-model methods
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom),
   with SelectCell synchronizing the selection range
-- `SetCellValue` cell editing method with pending-edit tracking,
-  input validation, formula-clearing and style-preserving edit
+- Inline cell editing via double-click, F2, or character-typing to start,
+  with an interactive text editor per cell, Enter to commit, Escape to
+  cancel, blur-commit semantics across both the grid and formula bar,
+  pending-edit tracking, formula-clearing and style-preserving edit
   semantics, and styled-blank retention on clear
 - xlsx workbook loading via excelize with full cell, sheet, and style support
   (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
 - SaveWorkbook and SaveWorkbookAs with xlsx save pipeline, dirty-state
-  guarding (unsaved-changes dialog before open/drop/close), and
+  guarding (unsaved-changes dialog before open/drop/close), File menu
+  Save/Save As commands, dirty indicator dot in the title bar, and
   testable file-dialog injection
+- Cross-platform dirty-prompt normalization: map native Yes/No dialog
+  responses to internal Save/Don't Save constants for Linux and Windows
 - beforeClose handler that intercepts the Wails window close event
 - BottomBar component with interactive sheet tabs rendered from workbook
   sheets, click-to-switch handling, horizontal scroll overflow for many
   sheets, and dynamic status readouts with color-coded kind indicators
 - SideRail component with disabled icon buttons for collapsed left and right
   workspace rails
-- FormulaBar component with name box, visual divider, fx marker, and a
-  formula display wired to live cell data (formula or raw value),
-  integrated into WorkspaceShell
+- Interactive FormulaBar with focus-to-edit, Enter to commit, Escape to
+  cancel, and blur-commit semantics wired to the grid's edit session
 - Workspace shell with CSS Grid layout (top chrome, formula strip, left/right
   rails, grid canvas, bottom bar) wiring all child components to Wails Go
   backend bindings, with drag-and-drop file opening via Wails runtime handler

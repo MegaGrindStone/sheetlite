@@ -13,9 +13,12 @@
 		InitializeAppearance,
 		OpenDroppedFiles,
 		OpenWorkbook,
+		SaveWorkbook,
+		SaveWorkbookAs,
 		SelectCell,
 		SetActiveSheet,
 		SetAppearanceMode,
+		SetCellValue,
 		SetScrollPosition,
 		SetSystemTheme,
 		SetZoom
@@ -27,11 +30,14 @@
 	import SideRail from './SideRail.svelte';
 	import BottomBar from './BottomBar.svelte';
 	import SpreadsheetGrid from './SpreadsheetGrid.svelte';
+	import type { CellEditSession, CellEditSource } from './cellEditSession';
 
 	type StateCommand = () => Promise<main.AppState>;
 
 	let appState = $state<main.AppState | null>(null);
 	let isDragOver = $state(false);
+	let cellEditSession = $state<CellEditSession | null>(null);
+	let cellEditCommitting = $state(false);
 	let isMounted = false;
 	let dragDepth = 0;
 
@@ -74,8 +80,75 @@
 		return updateSnapshot(() => OpenWorkbook());
 	}
 
+	function saveWorkbook(): Promise<void> {
+		return updateSnapshot(() => SaveWorkbook());
+	}
+
+	function saveWorkbookAs(): Promise<void> {
+		return updateSnapshot(() => SaveWorkbookAs());
+	}
+
 	function selectCell(cellRef: string): Promise<void> {
 		return updateSnapshot(() => SelectCell(cellRef));
+	}
+
+	function setCellValue(sheetName: string, cellRef: string, value: string): Promise<void> {
+		return updateSnapshot(() => SetCellValue(sheetName, cellRef, value));
+	}
+
+	function isCurrentEditSession(sheetName: string, cellRef: string): boolean {
+		return cellEditSession?.sheetName === sheetName && cellEditSession.cellRef === cellRef;
+	}
+
+	function beginCellEdit(
+		source: CellEditSource,
+		sheetName: string,
+		cellRef: string,
+		value: string
+	): void {
+		if (cellEditCommitting || !sheetName || !cellRef) {
+			return;
+		}
+
+		cellEditSession = { source, sheetName, cellRef, value };
+	}
+
+	function updateCellEdit(
+		source: CellEditSource,
+		sheetName: string,
+		cellRef: string,
+		value: string
+	): void {
+		if (cellEditCommitting || !sheetName || !cellRef) {
+			return;
+		}
+
+		if (isCurrentEditSession(sheetName, cellRef) && cellEditSession) {
+			cellEditSession = { ...cellEditSession, value };
+			return;
+		}
+
+		beginCellEdit(source, sheetName, cellRef, value);
+	}
+
+	function cancelCellEdit(sheetName?: string, cellRef?: string): void {
+		if (!sheetName || !cellRef || isCurrentEditSession(sheetName, cellRef)) {
+			cellEditSession = null;
+		}
+	}
+
+	async function commitCellEdit(sheetName: string, cellRef: string, value: string): Promise<void> {
+		if (cellEditCommitting || !sheetName || !cellRef) {
+			return;
+		}
+
+		cellEditCommitting = true;
+		try {
+			await setCellValue(sheetName, cellRef, value);
+			cancelCellEdit(sheetName, cellRef);
+		} finally {
+			cellEditCommitting = false;
+		}
 	}
 
 	function setActiveSheet(sheetName: string): Promise<void> {
@@ -190,13 +263,24 @@
 			{status}
 			{appearance}
 			onOpenWorkbook={openWorkbook}
+			onSaveWorkbook={saveWorkbook}
+			onSaveWorkbookAs={saveWorkbookAs}
 			onSetAppearanceMode={setAppearanceMode}
 		/>
 	</header>
 
 	<!-- Formula/Control Strip -->
 	<section class="formula-strip" aria-label="Formula bar">
-		<FormulaBar {view} {activeCell} />
+		<FormulaBar
+			{view}
+			{activeCell}
+			editSession={cellEditSession}
+			editCommitting={cellEditCommitting}
+			onBeginCellEdit={beginCellEdit}
+			onUpdateCellEdit={updateCellEdit}
+			onCancelCellEdit={cancelCellEdit}
+			onCommitCellEdit={commitCellEdit}
+		/>
 	</section>
 
 	<!-- Left Rail -->
@@ -211,7 +295,13 @@
 			{view}
 			styles={workbook?.styles ?? []}
 			dragActive={isDragOver}
+			editSession={cellEditSession}
+			editCommitting={cellEditCommitting}
 			onSelectCell={selectCell}
+			onBeginCellEdit={beginCellEdit}
+			onUpdateCellEdit={updateCellEdit}
+			onCancelCellEdit={cancelCellEdit}
+			onCommitCellEdit={commitCellEdit}
 			onSetScrollPosition={setScrollPosition}
 		/>
 	</main>
@@ -250,6 +340,9 @@
 	/* Top Chrome Region */
 	.top-chrome {
 		grid-area: top-chrome;
+		position: relative;
+		z-index: 20;
+		overflow: visible;
 		background-color: var(--color-chrome);
 		border-bottom: 1px solid var(--color-border);
 	}
@@ -257,6 +350,8 @@
 	/* Formula/Control Strip Region */
 	.formula-strip {
 		grid-area: formula-strip;
+		position: relative;
+		z-index: 10;
 		background-color: var(--color-chrome);
 		border-bottom: 1px solid var(--color-border);
 		display: flex;

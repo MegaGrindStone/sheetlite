@@ -10,11 +10,17 @@ export function OpenWorkbook():Promise<main.AppState>;
 
 export function OpenWorkbookPath(arg1:string):Promise<main.AppState>;
 
+export function SaveWorkbook():Promise<main.AppState>;
+
+export function SaveWorkbookAs():Promise<main.AppState>;
+
 export function SelectCell(arg1:string):Promise<main.AppState>;
 
 export function SetActiveSheet(arg1:string):Promise<main.AppState>;
 
 export function SetAppearanceMode(arg1:main.AppearanceMode):Promise<main.AppState>;
+
+export function SetCellValue(arg1:string,arg2:string,arg3:string):Promise<main.AppState>;
 
 export function SetScrollPosition(arg1:number,arg2:number):Promise<main.AppState>;
 

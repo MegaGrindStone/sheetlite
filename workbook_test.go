@@ -773,6 +773,54 @@ func TestOpenDroppedFilesDirtyPromptDontSaveReplacesWorkbook(t *testing.T) {
 	}
 }
 
+func TestOpenDroppedFilesDirtyPromptNativeYesNoChoices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("yes saves then opens", func(t *testing.T) {
+		t.Parallel()
+
+		currentPath := createWorkbookFixture(t)
+		nextPath := createWorkbookFixture(t)
+		app := NewApp()
+		app.ctx = context.Background()
+		app.OpenWorkbookPath(currentPath)
+		app.SetCellValue(fixtureDataSheet, "A2", "Native Yes Saved")
+		app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+			return "Yes", nil
+		}
+
+		state := app.OpenDroppedFiles([]string{nextPath})
+		assertReadyStatus(t, state.Status)
+		if state.Workbook.FilePath != nextPath || state.Workbook.Dirty {
+			t.Fatalf("expected native Yes prompt to save then open next workbook, got %#v", state.Workbook)
+		}
+
+		currentFile := openExcelFile(t, currentPath)
+		assertExcelCellValue(t, currentFile, fixtureDataSheet, "A2", "Native Yes Saved")
+	})
+
+	t.Run("no discards and opens", func(t *testing.T) {
+		t.Parallel()
+
+		nextPath := createWorkbookFixture(t)
+		app := NewApp()
+		app.ctx = context.Background()
+		app.SetCellValue(defaultSheetName, "A1", "discard me")
+		app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+			return "No", nil
+		}
+
+		state := app.OpenDroppedFiles([]string{nextPath})
+		assertReadyStatus(t, state.Status)
+		if state.Workbook.FilePath != nextPath || state.Workbook.Dirty {
+			t.Fatalf("expected native No prompt to discard then open next workbook, got %#v", state.Workbook)
+		}
+		if len(app.pendingCellEdits) != 0 {
+			t.Fatalf("expected replacement to clear pending edits, got %#v", app.pendingCellEdits)
+		}
+	})
+}
+
 func TestBeforeCloseDirtyPromptChoices(t *testing.T) {
 	t.Parallel()
 
