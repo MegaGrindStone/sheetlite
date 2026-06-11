@@ -196,12 +196,12 @@ func loadWorkbookFile(file *excelize.File, path string) (WorkbookState, Workbook
 
 	fileName := filepath.Base(path)
 	workbook := WorkbookState{
-		HasWorkbook: true,
-		Title:       fileName,
-		FilePath:    path,
-		FileName:    fileName,
-		Sheets:      sheets,
-		Styles:      styles,
+		Title:    fileName,
+		FilePath: path,
+		FileName: fileName,
+		Dirty:    false,
+		Sheets:   sheets,
+		Styles:   styles,
 	}
 
 	return workbook, loadedWorkbookView(activeSheetName(file, sheetNames)), nil

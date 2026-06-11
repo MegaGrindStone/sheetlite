@@ -168,11 +168,11 @@ func assertLoadedWorkbookIdentity(t *testing.T, state AppState, path string) {
 	t.Helper()
 
 	fileName := filepath.Base(path)
-	if !state.Workbook.HasWorkbook {
-		t.Fatalf("expected workbook to be loaded, got %#v", state.Workbook)
-	}
 	if state.Workbook.Title != fileName || state.Workbook.FileName != fileName || state.Workbook.FilePath != path {
 		t.Fatalf("expected workbook identity for %q, got %#v", path, state.Workbook)
+	}
+	if state.Workbook.Dirty {
+		t.Fatalf("expected loaded workbook to be clean, got %#v", state.Workbook)
 	}
 }
 

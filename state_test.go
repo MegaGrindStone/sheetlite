@@ -200,11 +200,11 @@ func assertNeutralAppState(t *testing.T, state AppState) {
 		Columns:            []ColumnLayout{},
 		Rows:               []RowLayout{},
 	}
-	if state.Workbook.HasWorkbook {
-		t.Fatalf("expected neutral state to have no workbook, got %#v", state.Workbook)
-	}
 	if state.Workbook.Title != defaultWorkbookTitle || state.Workbook.FilePath != "" || state.Workbook.FileName != "" {
 		t.Fatalf("expected neutral workbook identity, got %#v", state.Workbook)
+	}
+	if state.Workbook.Dirty {
+		t.Fatalf("expected neutral workbook to be clean, got %#v", state.Workbook)
 	}
 	if !reflect.DeepEqual(state.Workbook.Sheets, []WorkbookSheet{expectedSheet}) {
 		t.Fatalf("expected neutral sheet list, got %#v", state.Workbook.Sheets)

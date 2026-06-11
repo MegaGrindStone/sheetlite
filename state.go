@@ -43,12 +43,12 @@ type AppStatus struct {
 
 // WorkbookState describes the loaded workbook and its sheets.
 type WorkbookState struct {
-	HasWorkbook bool            `json:"hasWorkbook"`
-	Title       string          `json:"title"`
-	FilePath    string          `json:"filePath"`
-	FileName    string          `json:"fileName"`
-	Sheets      []WorkbookSheet `json:"sheets"`
-	Styles      []CellStyle     `json:"styles"`
+	Title    string          `json:"title"`
+	FilePath string          `json:"filePath"`
+	FileName string          `json:"fileName"`
+	Dirty    bool            `json:"dirty"`
+	Sheets   []WorkbookSheet `json:"sheets"`
+	Styles   []CellStyle     `json:"styles"`
 }
 
 // WorkbookViewState describes the current workbook viewport and selection state.
@@ -139,10 +139,10 @@ func initialAppState() AppState {
 
 	return AppState{
 		Workbook: WorkbookState{
-			HasWorkbook: false,
-			Title:       defaultWorkbookTitle,
-			FilePath:    "",
-			FileName:    "",
+			Title:    defaultWorkbookTitle,
+			FilePath: "",
+			FileName: "",
+			Dirty:    false,
 			Sheets: []WorkbookSheet{
 				{
 					Index:              defaultSheetIndex,
