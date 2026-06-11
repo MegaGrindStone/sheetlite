@@ -9,7 +9,17 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-const styleOnlyCellScanLimit = 100_000
+const (
+	styleOnlyCellScanLimit = 100_000
+
+	cellKindBool         = "bool"
+	cellKindDate         = "date"
+	cellKindError        = "error"
+	cellKindFormula      = "formula"
+	cellKindInlineString = "inlineString"
+	cellKindNumber       = "number"
+	cellKindString       = "string"
+)
 
 func parseCellAddress(ref string) (CellAddress, bool) {
 	trimmed := strings.TrimSpace(ref)
@@ -214,7 +224,7 @@ func setSheetCellValue(sheet *WorkbookSheet, address CellAddress, value string) 
 		nextCell.RawValue = value
 		nextCell.Formula = ""
 		nextCell.HasFormula = false
-		nextCell.Kind = "string"
+		nextCell.Kind = cellKindString
 
 		// Formula metadata and bounds can make an edit meaningful even when text matches.
 		changed := nextCell != oldCell || expandedBounds != sheet.Bounds
@@ -241,7 +251,7 @@ func setSheetCellValue(sheet *WorkbookSheet, address CellAddress, value string) 
 		Column:   address.Column,
 		Value:    value,
 		RawValue: value,
-		Kind:     "string",
+		Kind:     cellKindString,
 	})
 	sheet.Bounds = expandedBounds
 	slices.SortFunc(sheet.Cells, func(left CellData, right CellData) int {
@@ -401,24 +411,24 @@ func a1Range() CellRange {
 
 func cellKind(cellType excelize.CellType, hasFormula bool) string {
 	if hasFormula {
-		return "formula"
+		return cellKindFormula
 	}
 
 	switch cellType {
 	case excelize.CellTypeBool:
-		return "bool"
+		return cellKindBool
 	case excelize.CellTypeDate:
-		return "date"
+		return cellKindDate
 	case excelize.CellTypeError:
-		return "error"
+		return cellKindError
 	case excelize.CellTypeFormula:
-		return "formula"
+		return cellKindFormula
 	case excelize.CellTypeInlineString:
-		return "inlineString"
+		return cellKindInlineString
 	case excelize.CellTypeNumber:
-		return "number"
+		return cellKindNumber
 	case excelize.CellTypeSharedString:
-		return "string"
+		return cellKindString
 	case excelize.CellTypeUnset:
 		return ""
 	default:

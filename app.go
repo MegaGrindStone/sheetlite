@@ -6,6 +6,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+const (
+	dirtyPromptSave     = "Save"
+	dirtyPromptDontSave = "Don't Save"
+	dirtyPromptCancel   = "Cancel"
 )
 
 // App owns Wails runtime context and the current application state snapshot.
@@ -14,6 +22,9 @@ type App struct {
 	ctx              context.Context
 	state            AppState
 	pendingCellEdits map[string]map[string]string
+	openFileDialog   func(context.Context, runtime.OpenDialogOptions) (string, error)
+	saveFileDialog   func(context.Context, runtime.SaveDialogOptions) (string, error)
+	messageDialog    func(context.Context, runtime.MessageDialogOptions) (string, error)
 }
 
 // NewApp creates a new App application struct with neutral startup state.
@@ -298,4 +309,105 @@ func (a *App) SetZoom(percent int) AppState {
 	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
+}
+
+func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
+	a.mu.RLock()
+	ctx := a.ctx
+	dirty := a.state.Workbook.Dirty
+	a.mu.RUnlock()
+
+	if !dirty {
+		return true
+	}
+
+	if ctx == nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{Kind: statusKindError, Message: "unsaved-changes dialog is not available yet", Busy: false}
+
+		return false
+	}
+
+	choice, err := a.runMessageDialog(ctx, runtime.MessageDialogOptions{
+		Type:          runtime.QuestionDialog,
+		Title:         "Unsaved changes",
+		Message:       "Save changes before continuing?",
+		Buttons:       []string{dirtyPromptSave, dirtyPromptDontSave, dirtyPromptCancel},
+		DefaultButton: dirtyPromptSave,
+		CancelButton:  dirtyPromptCancel,
+	})
+	if err != nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("could not show unsaved-changes dialog: %v", err),
+			Busy:    false,
+		}
+
+		return false
+	}
+
+	switch choice {
+	case dirtyPromptSave:
+		state := a.SaveWorkbook()
+
+		return !state.Workbook.Dirty && state.Status.Kind != statusKindError
+	case dirtyPromptDontSave:
+		// Open/drop clear edits only after replacement succeeds; close has no later cleanup point.
+		if discardOnDontSave {
+			a.discardPendingEdits()
+		}
+
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) beforeClose(ctx context.Context) bool {
+	if ctx != nil {
+		a.mu.Lock()
+		a.ctx = ctx
+		a.mu.Unlock()
+	}
+
+	// Wails expects true to prevent close; guard returns true to continue.
+	return !a.guardDestructiveTransition(true)
+}
+
+func (a *App) discardPendingEdits() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.pendingCellEdits = map[string]map[string]string{}
+	a.state.Workbook.Dirty = false
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+}
+
+func (a *App) runOpenFileDialog(ctx context.Context, options runtime.OpenDialogOptions) (string, error) {
+	if a.openFileDialog != nil {
+		return a.openFileDialog(ctx, options)
+	}
+
+	return runtime.OpenFileDialog(ctx, options)
+}
+
+func (a *App) runSaveFileDialog(ctx context.Context, options runtime.SaveDialogOptions) (string, error) {
+	if a.saveFileDialog != nil {
+		return a.saveFileDialog(ctx, options)
+	}
+
+	return runtime.SaveFileDialog(ctx, options)
+}
+
+func (a *App) runMessageDialog(ctx context.Context, options runtime.MessageDialogOptions) (string, error) {
+	if a.messageDialog != nil {
+		return a.messageDialog(ctx, options)
+	}
+
+	return runtime.MessageDialog(ctx, options)
 }

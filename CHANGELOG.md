@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics, and styled-blank retention on clear
 - xlsx workbook loading via excelize with full cell, sheet, and style support
   (OpenWorkbook, OpenWorkbookPath, OpenDroppedFiles)
+- SaveWorkbook and SaveWorkbookAs with xlsx save pipeline, dirty-state
+  guarding (unsaved-changes dialog before open/drop/close), and
+  testable file-dialog injection
+- beforeClose handler that intercepts the Wails window close event
 - BottomBar component with interactive sheet tabs rendered from workbook
   sheets, click-to-switch handling, horizontal scroll overflow for many
   sheets, and dynamic status readouts with color-coded kind indicators

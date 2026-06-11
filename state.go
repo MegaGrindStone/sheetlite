@@ -9,6 +9,8 @@ const (
 
 	defaultStatusMessage        = "Ready"
 	unsavedChangesStatusMessage = "Unsaved changes"
+	savingWorkbookMessage       = "Saving workbook..."
+	savedStatusMessage          = "Saved"
 	defaultWorkbookTitle        = "Untitled"
 	defaultSheetName            = "Sheet 1"
 	defaultSheetIndex           = 0

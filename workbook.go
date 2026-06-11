@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -18,6 +20,10 @@ const (
 
 // OpenWorkbook prompts for a .xlsx workbook and opens the selected path.
 func (a *App) OpenWorkbook() AppState {
+	if !a.guardDestructiveTransition(false) {
+		return a.State()
+	}
+
 	a.mu.RLock()
 	ctx := a.ctx
 	a.mu.RUnlock()
@@ -32,7 +38,7 @@ func (a *App) OpenWorkbook() AppState {
 		return cloneAppState(a.state)
 	}
 
-	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{
+	path, err := a.runOpenFileDialog(ctx, runtime.OpenDialogOptions{
 		Title: "Open .xlsx workbook",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "Excel workbooks (*.xlsx)", Pattern: "*.xlsx"},
@@ -117,6 +123,10 @@ func (a *App) OpenDroppedFiles(paths []string) AppState {
 		}
 
 		return cloneAppState(a.state)
+	}
+
+	if !a.guardDestructiveTransition(false) {
+		return a.State()
 	}
 
 	return a.OpenWorkbookPath(paths[0])
@@ -206,4 +216,311 @@ func loadWorkbookFile(file *excelize.File, path string) (WorkbookState, Workbook
 	}
 
 	return workbook, loadedWorkbookView(activeSheetName(file, sheetNames)), nil
+}
+
+// SaveWorkbook saves the current workbook. Untitled workbooks route through Save As.
+func (a *App) SaveWorkbook() AppState {
+	a.mu.RLock()
+	filePath := a.state.Workbook.FilePath
+	dirty := a.state.Workbook.Dirty
+	a.mu.RUnlock()
+
+	if strings.TrimSpace(filePath) == "" {
+		return a.SaveWorkbookAs()
+	}
+
+	if !dirty {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	return a.saveWorkbookToPath(filePath, false)
+}
+
+// SaveWorkbookAs prompts for a target path and saves the current workbook there.
+func (a *App) SaveWorkbookAs() AppState {
+	a.mu.RLock()
+	ctx := a.ctx
+	workbook := a.state.Workbook
+	a.mu.RUnlock()
+
+	if ctx == nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{Kind: statusKindError, Message: "save dialog is not available yet", Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	path, err := a.runSaveFileDialog(ctx, saveDialogOptions(workbook))
+	if err != nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("could not open save dialog: %v", err),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	if strings.TrimSpace(path) == "" {
+		return a.State()
+	}
+
+	return a.saveWorkbookToPath(path, true)
+}
+
+func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
+	targetPath, err := normalizeSavePath(path)
+	if err != nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{Kind: statusKindError, Message: err.Error(), Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	a.mu.Lock()
+	if a.state.Status.Kind == "" {
+		a.state = initialAppState()
+	}
+	// Save I/O runs without the app lock, so snapshot mutable state first.
+	workbook := cloneAppState(a.state).Workbook
+	pendingEdits := make(map[string]map[string]string, len(a.pendingCellEdits))
+	for sheetName, sheetEdits := range a.pendingCellEdits {
+		pendingEdits[sheetName] = maps.Clone(sheetEdits)
+	}
+	a.state.Status = AppStatus{Kind: statusKindLoading, Message: savingWorkbookMessage, Busy: true}
+	a.mu.Unlock()
+
+	savedPath, err := saveWorkbookFile(workbook, pendingEdits, targetPath)
+	if err != nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("could not save workbook: %v", err),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if updateIdentity {
+		a.state.Workbook.FilePath = savedPath
+		a.state.Workbook.FileName = filepath.Base(savedPath)
+		a.state.Workbook.Title = a.state.Workbook.FileName
+	}
+	a.state.Workbook.Dirty = false
+	a.pendingCellEdits = map[string]map[string]string{}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
+func saveWorkbookFile(
+	workbook WorkbookState,
+	pendingEdits map[string]map[string]string,
+	targetPath string,
+) (string, error) {
+	if strings.TrimSpace(workbook.FilePath) != "" {
+		return saveOpenedWorkbook(workbook.FilePath, pendingEdits, targetPath)
+	}
+
+	return saveUntitledWorkbook(workbook, targetPath)
+}
+
+func saveOpenedWorkbook(
+	sourcePath string,
+	pendingEdits map[string]map[string]string,
+	targetPath string,
+) (string, error) {
+	workbookPath, err := validateWorkbookPath(sourcePath)
+	if err != nil {
+		return "", err
+	}
+
+	// Reopen the source file so untouched workbook XML survives the save.
+	file, err := excelize.OpenFile(workbookPath)
+	if err != nil {
+		return "", fmt.Errorf("could not read workbook: %w", err)
+	}
+	defer file.Close()
+
+	if err := applyPendingCellEdits(file, pendingEdits); err != nil {
+		return "", err
+	}
+
+	if sameWorkbookPath(workbookPath, targetPath) {
+		if err := file.Save(); err != nil {
+			return "", err
+		}
+
+		return targetPath, nil
+	}
+
+	if err := file.SaveAs(targetPath); err != nil {
+		return "", err
+	}
+
+	return targetPath, nil
+}
+
+func saveUntitledWorkbook(workbook WorkbookState, targetPath string) (string, error) {
+	file := excelize.NewFile()
+	defer file.Close()
+
+	// Untitled saves intentionally write only current non-empty text cells.
+	sheets := workbook.Sheets
+	if len(sheets) == 0 {
+		sheets = []WorkbookSheet{{Name: defaultSheetName}}
+	}
+
+	defaultSheet := file.GetSheetName(file.GetActiveSheetIndex())
+	for index, sheet := range sheets {
+		sheetName := strings.TrimSpace(sheet.Name)
+		if sheetName == "" {
+			sheetName = defaultSheetName
+		}
+
+		if index == 0 && defaultSheet != sheetName {
+			if err := file.SetSheetName(defaultSheet, sheetName); err != nil {
+				return "", err
+			}
+		}
+		if index > 0 {
+			if _, err := file.NewSheet(sheetName); err != nil {
+				return "", err
+			}
+		}
+
+		for _, cell := range sheet.Cells {
+			value := cell.RawValue
+			if value == "" {
+				value = cell.Value
+			}
+			if value == "" {
+				continue
+			}
+			if err := file.SetCellStr(sheetName, cell.Ref, value); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	if err := file.SaveAs(targetPath); err != nil {
+		return "", err
+	}
+
+	return targetPath, nil
+}
+
+func applyPendingCellEdits(file *excelize.File, pendingEdits map[string]map[string]string) error {
+	sheetNames := make([]string, 0, len(pendingEdits))
+	for sheetName := range pendingEdits {
+		sheetNames = append(sheetNames, sheetName)
+	}
+	// Map iteration order is random; stable write order keeps errors deterministic.
+	slices.Sort(sheetNames)
+
+	for _, sheetName := range sheetNames {
+		sheetIndex, err := file.GetSheetIndex(sheetName)
+		if err != nil {
+			return err
+		}
+		if sheetIndex < 0 {
+			return fmt.Errorf("sheet %q was not found", sheetName)
+		}
+
+		cellRefs := make([]string, 0, len(pendingEdits[sheetName]))
+		for cellRef := range pendingEdits[sheetName] {
+			cellRefs = append(cellRefs, cellRef)
+		}
+		slices.Sort(cellRefs)
+
+		for _, cellRef := range cellRefs {
+			if err := file.SetCellStr(sheetName, cellRef, pendingEdits[sheetName][cellRef]); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func normalizeSavePath(path string) (string, error) {
+	trimmedPath := strings.TrimSpace(path)
+	if trimmedPath == "" {
+		return "", errors.New("choose a .xlsx path to save")
+	}
+
+	extension := filepath.Ext(trimmedPath)
+	if extension == "" {
+		trimmedPath += workbookFileExtension
+	} else if !strings.EqualFold(extension, workbookFileExtension) {
+		return "", errors.New("unsupported file type: only .xlsx workbooks can be saved")
+	}
+
+	absolutePath, err := filepath.Abs(trimmedPath)
+	if err == nil {
+		trimmedPath = absolutePath
+	}
+
+	info, err := os.Stat(trimmedPath)
+	if err == nil && info.IsDir() {
+		return "", fmt.Errorf("save path is a directory: %s", trimmedPath)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("could not inspect save path %s: %w", trimmedPath, err)
+	}
+
+	return trimmedPath, nil
+}
+
+func saveDialogOptions(workbook WorkbookState) runtime.SaveDialogOptions {
+	fileName := strings.TrimSpace(workbook.FileName)
+	if fileName == "" {
+		fileName = defaultWorkbookTitle + workbookFileExtension
+	}
+
+	options := runtime.SaveDialogOptions{
+		Title:                      "Save .xlsx workbook",
+		DefaultFilename:            fileName,
+		CanCreateDirectories:       true,
+		TreatPackagesAsDirectories: true,
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Excel workbooks (*.xlsx)", Pattern: "*.xlsx"},
+		},
+	}
+	if strings.TrimSpace(workbook.FilePath) != "" {
+		options.DefaultDirectory = filepath.Dir(workbook.FilePath)
+	}
+
+	return options
+}
+
+func sameWorkbookPath(left string, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	if leftErr == nil {
+		left = leftAbs
+	}
+	rightAbs, rightErr := filepath.Abs(right)
+	if rightErr == nil {
+		right = rightAbs
+	}
+
+	return filepath.Clean(left) == filepath.Clean(right)
 }

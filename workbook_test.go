@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -437,5 +440,473 @@ func assertClose(t *testing.T, label string, got float64, want float64) {
 
 	if math.Abs(got-want) > 0.000001 {
 		t.Fatalf("expected %s %.6f, got %.6f", label, want, got)
+	}
+}
+
+func TestNormalizeSavePath(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	basePath := filepath.Join(tempDir, "budget")
+	path, err := normalizeSavePath("  " + basePath + "  ")
+	must(t, err)
+	assertPathEqual(t, path, basePath+workbookFileExtension)
+
+	upperPath := filepath.Join(tempDir, "Budget.XLSX")
+	path, err = normalizeSavePath(upperPath)
+	must(t, err)
+	assertPathEqual(t, path, upperPath)
+
+	_, err = normalizeSavePath(filepath.Join(tempDir, "budget.xlsm"))
+	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
+		t.Fatalf("expected unsupported extension error, got %v", err)
+	}
+
+	directoryPath := filepath.Join(tempDir, "folder.xlsx")
+	must(t, os.Mkdir(directoryPath, 0o700))
+	_, err = normalizeSavePath(directoryPath)
+	if err == nil || !strings.Contains(err.Error(), "save path is a directory") {
+		t.Fatalf("expected directory error, got %v", err)
+	}
+}
+
+func TestSaveOpenedWorkbookAppliesPendingEditsAndPreservesContent(t *testing.T) {
+	t.Parallel()
+
+	sourcePath := createWorkbookFixture(t)
+	targetPath := filepath.Join(t.TempDir(), "copy.xlsx")
+	pendingEdits := map[string]map[string]string{
+		fixtureDataSheet: {
+			"A3": "=A1+B1",
+			"B2": "Budget",
+			"D2": "",
+		},
+	}
+
+	savedPath, err := saveOpenedWorkbook(sourcePath, pendingEdits, targetPath)
+	must(t, err)
+	if savedPath != targetPath {
+		t.Fatalf("expected result path %q, got %q", targetPath, savedPath)
+	}
+
+	file := openExcelFile(t, targetPath)
+	assertExcelCellValue(t, file, fixtureDataSheet, "B2", "Budget")
+	if styleID, err := file.GetCellStyle(fixtureDataSheet, "B2"); err != nil || styleID == 0 {
+		t.Fatalf("expected edited B2 to keep style, styleID=%d err=%v", styleID, err)
+	}
+	assertExcelCellValue(t, file, fixtureDataSheet, "A3", "=A1+B1")
+	assertExcelCellFormula(t, file, fixtureDataSheet, "A3", "")
+	assertExcelCellValue(t, file, fixtureDataSheet, "D2", "")
+	assertExcelCellFormula(t, file, fixtureDataSheet, "C2", "SUM(B2,7.5)")
+	assertExcelCellValue(t, file, fixtureSummarySheet, "A1", "Summary")
+	assertExcelMergeExists(t, file, fixtureDataSheet, "D4:E5")
+}
+
+func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.ctx = context.Background()
+	targetBase := filepath.Join(t.TempDir(), "literal-output")
+	var gotOptions runtime.SaveDialogOptions
+	app.saveFileDialog = func(_ context.Context, options runtime.SaveDialogOptions) (string, error) {
+		gotOptions = options
+
+		return targetBase, nil
+	}
+
+	app.SetCellValue(defaultSheetName, "A1", "123")
+	app.SetCellValue(defaultSheetName, "A2", "=A1+B1")
+	app.SetCellValue(defaultSheetName, "B2", "clear me")
+	app.SetCellValue(defaultSheetName, "B2", "")
+
+	state := app.SaveWorkbookAs()
+	wantPath := targetBase + workbookFileExtension
+	wantFileName := filepath.Base(wantPath)
+	if state.Workbook.FilePath != wantPath ||
+		state.Workbook.FileName != wantFileName ||
+		state.Workbook.Title != wantFileName {
+		t.Fatalf("expected Save As identity for %q, got %#v", wantPath, state.Workbook)
+	}
+	if state.Workbook.Dirty {
+		t.Fatalf("expected successful Save As to clear dirty state, got %#v", state.Workbook)
+	}
+	if len(app.pendingCellEdits) != 0 {
+		t.Fatalf("expected successful Save As to clear pending edits, got %#v", app.pendingCellEdits)
+	}
+	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+		t.Fatalf("expected saved status, got %#v", state.Status)
+	}
+	if gotOptions.DefaultFilename != defaultWorkbookTitle+workbookFileExtension {
+		t.Fatalf("expected default Save As filename for untitled workbook, got %#v", gotOptions)
+	}
+	if len(gotOptions.Filters) != 1 || gotOptions.Filters[0].Pattern != "*.xlsx" {
+		t.Fatalf("expected .xlsx Save As filter, got %#v", gotOptions.Filters)
+	}
+
+	file := openExcelFile(t, wantPath)
+	if sheetName := file.GetSheetName(file.GetActiveSheetIndex()); sheetName != defaultSheetName {
+		t.Fatalf("expected default sheet %q, got %q", defaultSheetName, sheetName)
+	}
+	assertExcelCellValue(t, file, defaultSheetName, "A1", "123")
+	assertExcelCellValue(t, file, defaultSheetName, "A2", "=A1+B1")
+	assertExcelCellFormula(t, file, defaultSheetName, "A2", "")
+	assertExcelCellValue(t, file, defaultSheetName, "B2", "")
+}
+
+func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
+	t.Parallel()
+
+	path := createWorkbookFixture(t)
+	app := NewApp()
+	app.OpenWorkbookPath(path)
+	app.SetCellValue(fixtureDataSheet, "B2", "Budget")
+	app.SetCellValue(fixtureDataSheet, "A3", "=A1+B1")
+
+	state := app.SaveWorkbook()
+	fileName := filepath.Base(path)
+	if state.Workbook.FilePath != path ||
+		state.Workbook.FileName != fileName ||
+		state.Workbook.Title != fileName {
+		t.Fatalf("expected in-place save to preserve identity, got %#v", state.Workbook)
+	}
+	if state.Workbook.Dirty {
+		t.Fatalf("expected in-place save to clear dirty state, got %#v", state.Workbook)
+	}
+	if len(app.pendingCellEdits) != 0 {
+		t.Fatalf("expected in-place save to clear pending edits, got %#v", app.pendingCellEdits)
+	}
+	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+		t.Fatalf("expected saved status, got %#v", state.Status)
+	}
+
+	file := openExcelFile(t, path)
+	assertExcelCellValue(t, file, fixtureDataSheet, "B2", "Budget")
+	assertExcelCellValue(t, file, fixtureDataSheet, "A3", "=A1+B1")
+	assertExcelCellFormula(t, file, fixtureDataSheet, "A3", "")
+	assertExcelCellFormula(t, file, fixtureDataSheet, "C2", "SUM(B2,7.5)")
+	assertExcelMergeExists(t, file, fixtureDataSheet, "D4:E5")
+}
+
+func TestSaveWorkbookWhenCleanReportsSavedWithoutChangingState(t *testing.T) {
+	t.Parallel()
+
+	path := createWorkbookFixture(t)
+	app := NewApp()
+	app.OpenWorkbookPath(path)
+	before := app.State()
+
+	state := app.SaveWorkbook()
+	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+		t.Fatalf("expected saved ready status, got %#v", state.Status)
+	}
+	before.Status = state.Status
+	if !reflect.DeepEqual(state, before) {
+		t.Fatalf("expected clean save to preserve state except status\nbefore: %#v\nafter:  %#v", before, state)
+	}
+}
+
+func TestSaveWorkbookFailurePreservesDirtyStateAndPendingEdits(t *testing.T) {
+	t.Parallel()
+
+	path := createWorkbookFixture(t)
+	app := NewApp()
+	app.OpenWorkbookPath(path)
+	app.SetCellValue(fixtureDataSheet, "B2", "Budget")
+	before := app.State()
+	must(t, os.Remove(path))
+
+	state := app.SaveWorkbook()
+	if state.Status.Kind != statusKindError || state.Status.Busy {
+		t.Fatalf("expected save error status without busy flag, got %#v", state.Status)
+	}
+	if !strings.Contains(state.Status.Message, "could not save workbook") {
+		t.Fatalf("expected save error message, got %q", state.Status.Message)
+	}
+	if !reflect.DeepEqual(state.Workbook, before.Workbook) || !reflect.DeepEqual(state.View, before.View) {
+		t.Fatalf("expected failed save to preserve state\nbefore: %#v\nafter:  %#v", before, state)
+	}
+	assertPendingEdit(t, app, fixtureDataSheet, "B2", "Budget")
+}
+
+func TestSaveWorkbookAsCancelIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.ctx = context.Background()
+	app.SetCellValue(defaultSheetName, "A1", "local")
+	app.saveFileDialog = func(context.Context, runtime.SaveDialogOptions) (string, error) {
+		return "", nil
+	}
+	before := app.State()
+
+	state := app.SaveWorkbookAs()
+	if !reflect.DeepEqual(state, before) {
+		t.Fatalf("expected Save As cancel to preserve state\nbefore: %#v\nafter:  %#v", before, state)
+	}
+	assertPendingEdit(t, app, defaultSheetName, "A1", "local")
+}
+
+func TestSaveWorkbookAsDialogErrorPreservesDirtyState(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.ctx = context.Background()
+	app.SetCellValue(defaultSheetName, "A1", "local")
+	app.saveFileDialog = func(context.Context, runtime.SaveDialogOptions) (string, error) {
+		return "", errors.New("dialog failed")
+	}
+	before := app.State()
+
+	state := app.SaveWorkbookAs()
+	if state.Status.Kind != statusKindError || !strings.Contains(state.Status.Message, "could not open save dialog") {
+		t.Fatalf("expected dialog error status, got %#v", state.Status)
+	}
+	before.Status = state.Status
+	if !reflect.DeepEqual(state, before) {
+		t.Fatalf("expected Save As dialog error to preserve state except status\nbefore: %#v\nafter:  %#v", before, state)
+	}
+	assertPendingEdit(t, app, defaultSheetName, "A1", "local")
+}
+
+func TestOpenWorkbookDirtyPromptCancelSkipsFilePicker(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.ctx = context.Background()
+	app.SetCellValue(defaultSheetName, "A1", "local")
+	openDialogCalls := 0
+	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+		return dirtyPromptCancel, nil
+	}
+	app.openFileDialog = func(context.Context, runtime.OpenDialogOptions) (string, error) {
+		openDialogCalls++
+
+		return createWorkbookFixture(t), nil
+	}
+	before := app.State()
+
+	state := app.OpenWorkbook()
+	if openDialogCalls != 0 {
+		t.Fatalf("expected canceling dirty prompt to skip file dialog, got %d calls", openDialogCalls)
+	}
+	if !reflect.DeepEqual(state, before) {
+		t.Fatalf("expected dirty prompt cancel to preserve state\nbefore: %#v\nafter:  %#v", before, state)
+	}
+	assertPendingEdit(t, app, defaultSheetName, "A1", "local")
+}
+
+func TestOpenDroppedFilesDirtyPromptSaveThenOpen(t *testing.T) {
+	t.Parallel()
+
+	currentPath := createWorkbookFixture(t)
+	nextPath := createWorkbookFixture(t)
+	app := NewApp()
+	app.ctx = context.Background()
+	app.OpenWorkbookPath(currentPath)
+	app.SetCellValue(fixtureDataSheet, "A2", "Saved Before Open")
+	app.messageDialog = func(_ context.Context, options runtime.MessageDialogOptions) (string, error) {
+		assertDirtyPromptOptions(t, options)
+
+		return dirtyPromptSave, nil
+	}
+
+	state := app.OpenDroppedFiles([]string{nextPath})
+	assertReadyStatus(t, state.Status)
+	if state.Workbook.FilePath != nextPath || state.Workbook.Dirty {
+		t.Fatalf("expected dropped workbook to replace current cleanly, got %#v", state.Workbook)
+	}
+	if len(app.pendingCellEdits) != 0 {
+		t.Fatalf("expected pending edits to clear after replacement, got %#v", app.pendingCellEdits)
+	}
+
+	currentFile := openExcelFile(t, currentPath)
+	assertExcelCellValue(t, currentFile, fixtureDataSheet, "A2", "Saved Before Open")
+	nextFile := openExcelFile(t, nextPath)
+	assertExcelCellValue(t, nextFile, fixtureDataSheet, "A2", "Alpha")
+}
+
+func TestOpenDroppedFilesDirtyPromptSaveFailureCancelsReplacement(t *testing.T) {
+	t.Parallel()
+
+	currentPath := createWorkbookFixture(t)
+	nextPath := createWorkbookFixture(t)
+	app := NewApp()
+	app.ctx = context.Background()
+	app.OpenWorkbookPath(currentPath)
+	app.SetCellValue(fixtureDataSheet, "A2", "Unsaved")
+	before := app.State()
+	must(t, os.Remove(currentPath))
+	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+		return dirtyPromptSave, nil
+	}
+
+	state := app.OpenDroppedFiles([]string{nextPath})
+	if state.Status.Kind != statusKindError || !strings.Contains(state.Status.Message, "could not save workbook") {
+		t.Fatalf("expected save failure status, got %#v", state.Status)
+	}
+	before.Status = state.Status
+	if !reflect.DeepEqual(state, before) {
+		t.Fatalf("expected failed prompt save to preserve workbook\nbefore: %#v\nafter:  %#v", before, state)
+	}
+	assertPendingEdit(t, app, fixtureDataSheet, "A2", "Unsaved")
+}
+
+func TestOpenDroppedFilesDirtyPromptDontSaveReplacesWorkbook(t *testing.T) {
+	t.Parallel()
+
+	nextPath := createWorkbookFixture(t)
+	app := NewApp()
+	app.ctx = context.Background()
+	app.SetCellValue(defaultSheetName, "A1", "discard me")
+	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+		return dirtyPromptDontSave, nil
+	}
+
+	state := app.OpenDroppedFiles([]string{nextPath})
+	assertReadyStatus(t, state.Status)
+	if state.Workbook.FilePath != nextPath || state.Workbook.Dirty {
+		t.Fatalf("expected replacement workbook to be clean, got %#v", state.Workbook)
+	}
+	if len(app.pendingCellEdits) != 0 {
+		t.Fatalf("expected replacement to clear pending edits, got %#v", app.pendingCellEdits)
+	}
+}
+
+func TestBeforeCloseDirtyPromptChoices(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		choice      string
+		wantPrevent bool
+		wantDirty   bool
+	}{
+		{name: "cancel", choice: dirtyPromptCancel, wantPrevent: true, wantDirty: true},
+		{name: "dont save", choice: dirtyPromptDontSave, wantPrevent: false, wantDirty: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := NewApp()
+			app.SetCellValue(defaultSheetName, "A1", "local")
+			app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+				return tt.choice, nil
+			}
+
+			prevent := app.beforeClose(context.Background())
+			if prevent != tt.wantPrevent {
+				t.Fatalf("expected prevent=%t, got %t", tt.wantPrevent, prevent)
+			}
+			state := app.State()
+			if state.Workbook.Dirty != tt.wantDirty {
+				t.Fatalf("expected dirty=%t, got %#v", tt.wantDirty, state.Workbook)
+			}
+			if tt.wantDirty {
+				assertPendingEdit(t, app, defaultSheetName, "A1", "local")
+			} else if len(app.pendingCellEdits) != 0 {
+				t.Fatalf("expected Don't Save close to clear pending edits, got %#v", app.pendingCellEdits)
+			}
+		})
+	}
+}
+
+func TestBeforeCloseSaveAsCancelPreventsClose(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.SetCellValue(defaultSheetName, "A1", "local")
+	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
+		return dirtyPromptSave, nil
+	}
+	app.saveFileDialog = func(context.Context, runtime.SaveDialogOptions) (string, error) {
+		return "", nil
+	}
+
+	prevent := app.beforeClose(context.Background())
+	if !prevent {
+		t.Fatalf("expected Save As cancellation to prevent close")
+	}
+	state := app.State()
+	if !state.Workbook.Dirty {
+		t.Fatalf("expected Save As cancellation to preserve dirty state, got %#v", state.Workbook)
+	}
+	assertPendingEdit(t, app, defaultSheetName, "A1", "local")
+}
+
+func openExcelFile(t *testing.T, path string) *excelize.File {
+	t.Helper()
+
+	file, err := excelize.OpenFile(path)
+	must(t, err)
+	t.Cleanup(func() {
+		if err := file.Close(); err != nil {
+			t.Fatalf("close workbook %q: %v", path, err)
+		}
+	})
+
+	return file
+}
+
+func assertExcelCellValue(t *testing.T, file *excelize.File, sheetName string, cellRef string, want string) {
+	t.Helper()
+
+	got, err := file.GetCellValue(sheetName, cellRef)
+	must(t, err)
+	if got != want {
+		t.Fatalf("expected %s!%s value %q, got %q", sheetName, cellRef, want, got)
+	}
+}
+
+func assertExcelCellFormula(t *testing.T, file *excelize.File, sheetName string, cellRef string, want string) {
+	t.Helper()
+
+	got, err := file.GetCellFormula(sheetName, cellRef)
+	must(t, err)
+	if got != want {
+		t.Fatalf("expected %s!%s formula %q, got %q", sheetName, cellRef, want, got)
+	}
+}
+
+func assertExcelMergeExists(t *testing.T, file *excelize.File, sheetName string, ref string) {
+	t.Helper()
+
+	mergeCells, err := file.GetMergeCells(sheetName)
+	must(t, err)
+	for _, mergeCell := range mergeCells {
+		if len(mergeCell) > 0 && mergeCell[0] == ref {
+			return
+		}
+	}
+
+	t.Fatalf("expected merge range %q in %s, got %#v", ref, sheetName, mergeCells)
+}
+
+func assertPathEqual(t *testing.T, got string, want string) {
+	t.Helper()
+
+	absoluteWant, err := filepath.Abs(want)
+	must(t, err)
+	if got != absoluteWant {
+		t.Fatalf("expected path %q, got %q", absoluteWant, got)
+	}
+}
+
+func assertDirtyPromptOptions(t *testing.T, options runtime.MessageDialogOptions) {
+	t.Helper()
+
+	if options.Type != runtime.QuestionDialog ||
+		options.DefaultButton != dirtyPromptSave ||
+		options.CancelButton != dirtyPromptCancel {
+		t.Fatalf("expected question dirty prompt options, got %#v", options)
+	}
+	wantButtons := []string{dirtyPromptSave, dirtyPromptDontSave, dirtyPromptCancel}
+	if !reflect.DeepEqual(options.Buttons, wantButtons) {
+		t.Fatalf("expected dirty prompt buttons %#v, got %#v", wantButtons, options.Buttons)
+	}
+	if !strings.Contains(strings.ToLower(options.Message), "save") {
+		t.Fatalf("expected dirty prompt save message, got %#v", options)
 	}
 }
