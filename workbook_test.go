@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -483,7 +484,7 @@ func TestSaveOpenedWorkbookAppliesPendingEditsAndPreservesContent(t *testing.T) 
 		},
 	}
 
-	savedPath, err := saveOpenedWorkbook(sourcePath, pendingEdits, targetPath)
+	savedPath, err := saveOpenedWorkbook(sourcePath, pendingEdits, pendingLayoutEdits{}, targetPath)
 	must(t, err)
 	if savedPath != targetPath {
 		t.Fatalf("expected result path %q, got %q", targetPath, savedPath)
@@ -500,6 +501,83 @@ func TestSaveOpenedWorkbookAppliesPendingEditsAndPreservesContent(t *testing.T) 
 	assertExcelCellFormula(t, file, fixtureDataSheet, "C2", "SUM(B2,7.5)")
 	assertExcelCellValue(t, file, fixtureSummarySheet, "A1", "Summary")
 	assertExcelMergeExists(t, file, fixtureDataSheet, "D4:E5")
+}
+
+func TestSaveOpenedWorkbookAppliesPendingColumnWidths(t *testing.T) {
+	t.Parallel()
+
+	sourcePath := createWorkbookFixture(t)
+	targetPath := filepath.Join(t.TempDir(), "columns.xlsx")
+	layoutEdits := pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{
+			fixtureDataSheet: {
+				2: 24.75,
+				4: 16.5,
+			},
+		},
+	}
+
+	savedPath, err := saveOpenedWorkbook(sourcePath, nil, layoutEdits, targetPath)
+	must(t, err)
+	if savedPath != targetPath {
+		t.Fatalf("expected result path %q, got %q", targetPath, savedPath)
+	}
+
+	file := openExcelFile(t, targetPath)
+	assertExcelColumnWidth(t, file, fixtureDataSheet, "B", 24.75)
+	assertExcelColumnWidth(t, file, fixtureDataSheet, "D", 16.5)
+	assertExcelCellValue(t, file, fixtureSummarySheet, "A1", "Summary")
+}
+
+func TestSaveOpenedWorkbookAppliesPendingRowHeights(t *testing.T) {
+	t.Parallel()
+
+	sourcePath := createWorkbookFixture(t)
+	targetPath := filepath.Join(t.TempDir(), "rows.xlsx")
+	layoutEdits := pendingLayoutEdits{
+		RowHeights: map[string]map[int]float64{
+			fixtureDataSheet: {
+				3: 36.25,
+				5: 22.5,
+			},
+		},
+	}
+
+	savedPath, err := saveOpenedWorkbook(sourcePath, nil, layoutEdits, targetPath)
+	must(t, err)
+	if savedPath != targetPath {
+		t.Fatalf("expected result path %q, got %q", targetPath, savedPath)
+	}
+
+	file := openExcelFile(t, targetPath)
+	assertExcelRowHeight(t, file, fixtureDataSheet, 3, 36.25)
+	assertExcelRowHeight(t, file, fixtureDataSheet, 5, 22.5)
+	assertExcelMergeExists(t, file, fixtureDataSheet, "D4:E5")
+}
+
+func TestSaveOpenedWorkbookAppliesPendingCellAndLayoutEditsTogether(t *testing.T) {
+	t.Parallel()
+
+	sourcePath := createWorkbookFixture(t)
+	targetPath := filepath.Join(t.TempDir(), "combined.xlsx")
+	pendingEdits := map[string]map[string]string{
+		fixtureDataSheet: {
+			"A3": "Combined",
+		},
+	}
+	layoutEdits := pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{fixtureDataSheet: {3: 30.5}},
+		RowHeights:   map[string]map[int]float64{fixtureDataSheet: {4: 32}},
+	}
+
+	_, err := saveOpenedWorkbook(sourcePath, pendingEdits, layoutEdits, targetPath)
+	must(t, err)
+
+	file := openExcelFile(t, targetPath)
+	assertExcelCellValue(t, file, fixtureDataSheet, "A3", "Combined")
+	assertExcelColumnWidth(t, file, fixtureDataSheet, "C", 30.5)
+	assertExcelRowHeight(t, file, fixtureDataSheet, 4, 32)
+	assertExcelCellFormula(t, file, fixtureDataSheet, "C2", "SUM(B2,7.5)")
 }
 
 func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
@@ -519,6 +597,8 @@ func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
 	app.SetCellValue(defaultSheetName, "A2", "=A1+B1")
 	app.SetCellValue(defaultSheetName, "B2", "clear me")
 	app.SetCellValue(defaultSheetName, "B2", "")
+	app.SetColumnWidth(defaultSheetName, 2, 21.5)
+	app.SetRowHeight(defaultSheetName, 3, 27.25)
 
 	state := app.SaveWorkbookAs()
 	wantPath := targetBase + workbookFileExtension
@@ -534,6 +614,7 @@ func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
 	if len(app.pendingCellEdits) != 0 {
 		t.Fatalf("expected successful Save As to clear pending edits, got %#v", app.pendingCellEdits)
 	}
+	assertNoPendingLayoutEdits(t, app)
 	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
 		t.Fatalf("expected saved status, got %#v", state.Status)
 	}
@@ -552,6 +633,8 @@ func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
 	assertExcelCellValue(t, file, defaultSheetName, "A2", "=A1+B1")
 	assertExcelCellFormula(t, file, defaultSheetName, "A2", "")
 	assertExcelCellValue(t, file, defaultSheetName, "B2", "")
+	assertExcelColumnWidth(t, file, defaultSheetName, "B", 21.5)
+	assertExcelRowHeight(t, file, defaultSheetName, 3, 27.25)
 }
 
 func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
@@ -562,6 +645,8 @@ func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
 	app.OpenWorkbookPath(path)
 	app.SetCellValue(fixtureDataSheet, "B2", "Budget")
 	app.SetCellValue(fixtureDataSheet, "A3", "=A1+B1")
+	app.SetColumnWidth(fixtureDataSheet, 2, 25.5)
+	app.SetRowHeight(fixtureDataSheet, 3, 34.75)
 
 	state := app.SaveWorkbook()
 	fileName := filepath.Base(path)
@@ -576,6 +661,7 @@ func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
 	if len(app.pendingCellEdits) != 0 {
 		t.Fatalf("expected in-place save to clear pending edits, got %#v", app.pendingCellEdits)
 	}
+	assertNoPendingLayoutEdits(t, app)
 	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
 		t.Fatalf("expected saved status, got %#v", state.Status)
 	}
@@ -585,6 +671,8 @@ func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
 	assertExcelCellValue(t, file, fixtureDataSheet, "A3", "=A1+B1")
 	assertExcelCellFormula(t, file, fixtureDataSheet, "A3", "")
 	assertExcelCellFormula(t, file, fixtureDataSheet, "C2", "SUM(B2,7.5)")
+	assertExcelColumnWidth(t, file, fixtureDataSheet, "B", 25.5)
+	assertExcelRowHeight(t, file, fixtureDataSheet, 3, 34.75)
 	assertExcelMergeExists(t, file, fixtureDataSheet, "D4:E5")
 }
 
@@ -613,6 +701,8 @@ func TestSaveWorkbookFailurePreservesDirtyStateAndPendingEdits(t *testing.T) {
 	app := NewApp()
 	app.OpenWorkbookPath(path)
 	app.SetCellValue(fixtureDataSheet, "B2", "Budget")
+	app.SetColumnWidth(fixtureDataSheet, 2, 26.5)
+	app.SetRowHeight(fixtureDataSheet, 3, 35.5)
 	before := app.State()
 	must(t, os.Remove(path))
 
@@ -627,6 +717,8 @@ func TestSaveWorkbookFailurePreservesDirtyStateAndPendingEdits(t *testing.T) {
 		t.Fatalf("expected failed save to preserve state\nbefore: %#v\nafter:  %#v", before, state)
 	}
 	assertPendingEdit(t, app, fixtureDataSheet, "B2", "Budget")
+	assertPendingColumnWidth(t, app, fixtureDataSheet, 2, 26.5)
+	assertPendingRowHeight(t, app, fixtureDataSheet, 3, 35.5)
 }
 
 func TestSaveWorkbookAsCancelIsNoOp(t *testing.T) {
@@ -705,6 +797,8 @@ func TestOpenDroppedFilesDirtyPromptSaveThenOpen(t *testing.T) {
 	app.ctx = context.Background()
 	app.OpenWorkbookPath(currentPath)
 	app.SetCellValue(fixtureDataSheet, "A2", "Saved Before Open")
+	app.SetColumnWidth(fixtureDataSheet, 2, 27.5)
+	app.SetRowHeight(fixtureDataSheet, 3, 37.5)
 	app.messageDialog = func(_ context.Context, options runtime.MessageDialogOptions) (string, error) {
 		assertDirtyPromptOptions(t, options)
 
@@ -719,9 +813,12 @@ func TestOpenDroppedFilesDirtyPromptSaveThenOpen(t *testing.T) {
 	if len(app.pendingCellEdits) != 0 {
 		t.Fatalf("expected pending edits to clear after replacement, got %#v", app.pendingCellEdits)
 	}
+	assertNoPendingLayoutEdits(t, app)
 
 	currentFile := openExcelFile(t, currentPath)
 	assertExcelCellValue(t, currentFile, fixtureDataSheet, "A2", "Saved Before Open")
+	assertExcelColumnWidth(t, currentFile, fixtureDataSheet, "B", 27.5)
+	assertExcelRowHeight(t, currentFile, fixtureDataSheet, 3, 37.5)
 	nextFile := openExcelFile(t, nextPath)
 	assertExcelCellValue(t, nextFile, fixtureDataSheet, "A2", "Alpha")
 }
@@ -735,6 +832,8 @@ func TestOpenDroppedFilesDirtyPromptSaveFailureCancelsReplacement(t *testing.T) 
 	app.ctx = context.Background()
 	app.OpenWorkbookPath(currentPath)
 	app.SetCellValue(fixtureDataSheet, "A2", "Unsaved")
+	app.SetColumnWidth(fixtureDataSheet, 2, 28.5)
+	app.SetRowHeight(fixtureDataSheet, 3, 38.5)
 	before := app.State()
 	must(t, os.Remove(currentPath))
 	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
@@ -750,6 +849,8 @@ func TestOpenDroppedFilesDirtyPromptSaveFailureCancelsReplacement(t *testing.T) 
 		t.Fatalf("expected failed prompt save to preserve workbook\nbefore: %#v\nafter:  %#v", before, state)
 	}
 	assertPendingEdit(t, app, fixtureDataSheet, "A2", "Unsaved")
+	assertPendingColumnWidth(t, app, fixtureDataSheet, 2, 28.5)
+	assertPendingRowHeight(t, app, fixtureDataSheet, 3, 38.5)
 }
 
 func TestOpenDroppedFilesDirtyPromptDontSaveReplacesWorkbook(t *testing.T) {
@@ -759,6 +860,8 @@ func TestOpenDroppedFilesDirtyPromptDontSaveReplacesWorkbook(t *testing.T) {
 	app := NewApp()
 	app.ctx = context.Background()
 	app.SetCellValue(defaultSheetName, "A1", "discard me")
+	app.SetColumnWidth(defaultSheetName, 2, 18.5)
+	app.SetRowHeight(defaultSheetName, 3, 24.5)
 	app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
 		return dirtyPromptDontSave, nil
 	}
@@ -771,6 +874,7 @@ func TestOpenDroppedFilesDirtyPromptDontSaveReplacesWorkbook(t *testing.T) {
 	if len(app.pendingCellEdits) != 0 {
 		t.Fatalf("expected replacement to clear pending edits, got %#v", app.pendingCellEdits)
 	}
+	assertNoPendingLayoutEdits(t, app)
 }
 
 func TestOpenDroppedFilesDirtyPromptNativeYesNoChoices(t *testing.T) {
@@ -806,6 +910,8 @@ func TestOpenDroppedFilesDirtyPromptNativeYesNoChoices(t *testing.T) {
 		app := NewApp()
 		app.ctx = context.Background()
 		app.SetCellValue(defaultSheetName, "A1", "discard me")
+		app.SetColumnWidth(defaultSheetName, 2, 19.5)
+		app.SetRowHeight(defaultSheetName, 3, 25.5)
 		app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
 			return "No", nil
 		}
@@ -818,6 +924,7 @@ func TestOpenDroppedFilesDirtyPromptNativeYesNoChoices(t *testing.T) {
 		if len(app.pendingCellEdits) != 0 {
 			t.Fatalf("expected replacement to clear pending edits, got %#v", app.pendingCellEdits)
 		}
+		assertNoPendingLayoutEdits(t, app)
 	})
 }
 
@@ -840,6 +947,8 @@ func TestBeforeCloseDirtyPromptChoices(t *testing.T) {
 
 			app := NewApp()
 			app.SetCellValue(defaultSheetName, "A1", "local")
+			app.SetColumnWidth(defaultSheetName, 2, 20.5)
+			app.SetRowHeight(defaultSheetName, 3, 26.5)
 			app.messageDialog = func(context.Context, runtime.MessageDialogOptions) (string, error) {
 				return tt.choice, nil
 			}
@@ -852,10 +961,15 @@ func TestBeforeCloseDirtyPromptChoices(t *testing.T) {
 			if state.Workbook.Dirty != tt.wantDirty {
 				t.Fatalf("expected dirty=%t, got %#v", tt.wantDirty, state.Workbook)
 			}
-			if tt.wantDirty {
+			switch {
+			case tt.wantDirty:
 				assertPendingEdit(t, app, defaultSheetName, "A1", "local")
-			} else if len(app.pendingCellEdits) != 0 {
+				assertPendingColumnWidth(t, app, defaultSheetName, 2, 20.5)
+				assertPendingRowHeight(t, app, defaultSheetName, 3, 26.5)
+			case len(app.pendingCellEdits) != 0:
 				t.Fatalf("expected Don't Save close to clear pending edits, got %#v", app.pendingCellEdits)
+			default:
+				assertNoPendingLayoutEdits(t, app)
 			}
 		})
 	}
@@ -916,6 +1030,22 @@ func assertExcelCellFormula(t *testing.T, file *excelize.File, sheetName string,
 	if got != want {
 		t.Fatalf("expected %s!%s formula %q, got %q", sheetName, cellRef, want, got)
 	}
+}
+
+func assertExcelColumnWidth(t *testing.T, file *excelize.File, sheetName string, columnName string, want float64) {
+	t.Helper()
+
+	got, err := file.GetColWidth(sheetName, columnName)
+	must(t, err)
+	assertClose(t, fmt.Sprintf("%s!%s width", sheetName, columnName), got, want)
+}
+
+func assertExcelRowHeight(t *testing.T, file *excelize.File, sheetName string, rowIndex int, want float64) {
+	t.Helper()
+
+	got, err := file.GetRowHeight(sheetName, rowIndex)
+	must(t, err)
+	assertClose(t, fmt.Sprintf("%s!%d height", sheetName, rowIndex), got, want)
 }
 
 func assertExcelMergeExists(t *testing.T, file *excelize.File, sheetName string, ref string) {

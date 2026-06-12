@@ -22,6 +22,10 @@ export function SetAppearanceMode(arg1:main.AppearanceMode):Promise<main.AppStat
 
 export function SetCellValue(arg1:string,arg2:string,arg3:string):Promise<main.AppState>;
 
+export function SetColumnWidth(arg1:string,arg2:number,arg3:number):Promise<main.AppState>;
+
+export function SetRowHeight(arg1:string,arg2:number,arg3:number):Promise<main.AppState>;
+
 export function SetScrollPosition(arg1:number,arg2:number):Promise<main.AppState>;
 
 export function SetSystemTheme(arg1:main.AppearanceTheme):Promise<main.AppState>;

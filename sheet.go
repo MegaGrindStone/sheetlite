@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"slices"
 	"sort"
@@ -9,7 +11,10 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-const excelizeDefaultColumnWidth = 9.140625
+const (
+	excelizeDefaultColumnWidth = 9.140625
+	layoutDimensionTolerance   = 0.000001
+)
 
 // WorkbookSheet describes one worksheet and the loaded data for it.
 type WorkbookSheet struct {
@@ -24,6 +29,106 @@ type WorkbookSheet struct {
 	MergedCells        []MergedCellRange `json:"mergedCells"`
 	Columns            []ColumnLayout    `json:"columns"`
 	Rows               []RowLayout       `json:"rows"`
+}
+
+func (w *WorkbookSheet) setColumnWidth(index int, width float64) (bool, error) {
+	if index < minExcelColumn || index > maxExcelColumn {
+		return false, fmt.Errorf("column index must be between %d and %d", minExcelColumn, maxExcelColumn)
+	}
+	if !validLayoutDimension(width) {
+		return false, errors.New("column width must be a positive finite number")
+	}
+
+	layoutIndex := slices.IndexFunc(w.Columns, func(column ColumnLayout) bool {
+		return column.Index == index
+	})
+	if layoutIndex >= 0 {
+		if sameLayoutDimension(w.Columns[layoutIndex].Width, width) {
+			return false, nil
+		}
+
+		w.Columns[layoutIndex].Width = width
+		slices.SortFunc(w.Columns, func(left ColumnLayout, right ColumnLayout) int {
+			return left.Index - right.Index
+		})
+
+		return true, nil
+	}
+
+	if sameLayoutDimension(effectiveDefaultColumnWidth(w.DefaultColumnWidth), width) {
+		return false, nil
+	}
+
+	name, err := excelize.ColumnNumberToName(index)
+	if err != nil {
+		return false, err
+	}
+	w.Columns = append(w.Columns, ColumnLayout{Index: index, Name: name, Width: width})
+	slices.SortFunc(w.Columns, func(left ColumnLayout, right ColumnLayout) int {
+		return left.Index - right.Index
+	})
+
+	return true, nil
+}
+
+func (w *WorkbookSheet) setRowHeight(index int, height float64) (bool, error) {
+	if index < minExcelRow || index > maxExcelRow {
+		return false, fmt.Errorf("row index must be between %d and %d", minExcelRow, maxExcelRow)
+	}
+	if !validLayoutDimension(height) {
+		return false, errors.New("row height must be a positive finite number")
+	}
+
+	layoutIndex := slices.IndexFunc(w.Rows, func(row RowLayout) bool {
+		return row.Index == index
+	})
+	if layoutIndex >= 0 {
+		if sameLayoutDimension(w.Rows[layoutIndex].Height, height) {
+			return false, nil
+		}
+
+		w.Rows[layoutIndex].Height = height
+		slices.SortFunc(w.Rows, func(left RowLayout, right RowLayout) int {
+			return left.Index - right.Index
+		})
+
+		return true, nil
+	}
+
+	if sameLayoutDimension(effectiveDefaultRowHeight(w.DefaultRowHeight), height) {
+		return false, nil
+	}
+
+	w.Rows = append(w.Rows, RowLayout{Index: index, Height: height})
+	slices.SortFunc(w.Rows, func(left RowLayout, right RowLayout) int {
+		return left.Index - right.Index
+	})
+
+	return true, nil
+}
+
+func validLayoutDimension(value float64) bool {
+	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func sameLayoutDimension(left float64, right float64) bool {
+	return math.Abs(left-right) < layoutDimensionTolerance
+}
+
+func effectiveDefaultColumnWidth(width float64) float64 {
+	if validLayoutDimension(width) {
+		return width
+	}
+
+	return defaultColumnWidth
+}
+
+func effectiveDefaultRowHeight(height float64) float64 {
+	if validLayoutDimension(height) {
+		return height
+	}
+
+	return defaultRowHeight
 }
 
 func (w *WorkbookSheet) setCellValue(address CellAddress, value string) (bool, error) {
@@ -298,7 +403,7 @@ func loadColumnLayouts(
 
 		hidden := !visible
 		// Skip default columns instead of serializing the whole sheet width.
-		if math.Abs(width-defaultWidth) < 0.000001 && !hidden && outlineLevel == 0 && styleID == 0 {
+		if sameLayoutDimension(width, defaultWidth) && !hidden && outlineLevel == 0 && styleID == 0 {
 			continue
 		}
 
@@ -341,7 +446,7 @@ func loadRowLayouts(
 
 		hidden := !visible
 		// Skip default rows instead of serializing every row in the useful bounds.
-		if math.Abs(height-defaultHeight) < 0.000001 && !hidden && outlineLevel == 0 {
+		if sameLayoutDimension(height, defaultHeight) && !hidden && outlineLevel == 0 {
 			continue
 		}
 

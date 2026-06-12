@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -18,18 +19,26 @@ const (
 
 // App owns Wails runtime context and the current application state snapshot.
 type App struct {
-	mu               sync.RWMutex
-	ctx              context.Context
-	state            AppState
-	pendingCellEdits map[string]map[string]string
-	openFileDialog   func(context.Context, runtime.OpenDialogOptions) (string, error)
-	saveFileDialog   func(context.Context, runtime.SaveDialogOptions) (string, error)
-	messageDialog    func(context.Context, runtime.MessageDialogOptions) (string, error)
+	mu                 sync.RWMutex
+	ctx                context.Context
+	state              AppState
+	pendingCellEdits   map[string]map[string]string
+	pendingLayoutEdits pendingLayoutEdits
+	openFileDialog     func(context.Context, runtime.OpenDialogOptions) (string, error)
+	saveFileDialog     func(context.Context, runtime.SaveDialogOptions) (string, error)
+	messageDialog      func(context.Context, runtime.MessageDialogOptions) (string, error)
 }
 
 // NewApp creates a new App application struct with neutral startup state.
 func NewApp() *App {
-	return &App{state: initialAppState(), pendingCellEdits: map[string]map[string]string{}}
+	return &App{
+		state:            initialAppState(),
+		pendingCellEdits: map[string]map[string]string{},
+		pendingLayoutEdits: pendingLayoutEdits{
+			ColumnWidths: map[string]map[int]float64{},
+			RowHeights:   map[string]map[int]float64{},
+		},
+	}
 }
 
 // startup is called when the app starts. The context is saved for runtime calls.
@@ -44,6 +53,10 @@ func (a *App) startup(ctx context.Context) {
 	}
 	if a.pendingCellEdits == nil {
 		a.pendingCellEdits = map[string]map[string]string{}
+	}
+	a.pendingLayoutEdits = pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{},
+		RowHeights:   map[string]map[int]float64{},
 	}
 }
 
@@ -268,6 +281,143 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 	return cloneAppState(a.state)
 }
 
+// SetColumnWidth applies one committed width change to a worksheet column.
+func (a *App) SetColumnWidth(sheetName string, columnIndex int, width float64) AppState {
+	return a.setLayoutDimension(sheetName, columnIndex, width, layoutDimensionCommand{
+		indexName: "Column index",
+		sizeName:  "Column width",
+		target:    "column",
+		minIndex:  minExcelColumn,
+		maxIndex:  maxExcelColumn,
+		mutate: func(sheet *WorkbookSheet, index int, size float64) (bool, error) {
+			return sheet.setColumnWidth(index, size)
+		},
+		record: func(app *App, name string, index int, size float64) {
+			if app.pendingLayoutEdits.ColumnWidths[name] == nil {
+				app.pendingLayoutEdits.ColumnWidths[name] = map[int]float64{}
+			}
+			app.pendingLayoutEdits.ColumnWidths[name][index] = size
+		},
+	})
+}
+
+// SetRowHeight applies one committed height change to a worksheet row.
+func (a *App) SetRowHeight(sheetName string, rowIndex int, height float64) AppState {
+	return a.setLayoutDimension(sheetName, rowIndex, height, layoutDimensionCommand{
+		indexName: "Row index",
+		sizeName:  "Row height",
+		target:    "row",
+		minIndex:  minExcelRow,
+		maxIndex:  maxExcelRow,
+		mutate: func(sheet *WorkbookSheet, index int, size float64) (bool, error) {
+			return sheet.setRowHeight(index, size)
+		},
+		record: func(app *App, name string, index int, size float64) {
+			if app.pendingLayoutEdits.RowHeights[name] == nil {
+				app.pendingLayoutEdits.RowHeights[name] = map[int]float64{}
+			}
+			app.pendingLayoutEdits.RowHeights[name][index] = size
+		},
+	})
+}
+
+type layoutDimensionCommand struct {
+	indexName string
+	sizeName  string
+	target    string
+	minIndex  int
+	maxIndex  int
+	mutate    func(*WorkbookSheet, int, float64) (bool, error)
+	record    func(*App, string, int, float64)
+}
+
+func (a *App) setLayoutDimension(
+	sheetName string,
+	index int,
+	size float64,
+	command layoutDimensionCommand,
+) AppState {
+	trimmedSheetName := strings.TrimSpace(sheetName)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Keep zero-value App structs usable in focused backend tests and command calls.
+	if a.state.Status.Kind == "" {
+		a.state = initialAppState()
+		a.pendingLayoutEdits = pendingLayoutEdits{
+			ColumnWidths: map[string]map[int]float64{},
+			RowHeights:   map[string]map[int]float64{},
+		}
+	}
+
+	if trimmedSheetName == "" {
+		a.state.Status = AppStatus{Kind: statusKindError, Message: "Sheet name is required.", Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	if index < command.minIndex || index > command.maxIndex {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("%s must be between %d and %d.", command.indexName, command.minIndex, command.maxIndex),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	if !validLayoutDimension(size) {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: command.sizeName + " must be a positive finite number.",
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	sheetIndex := slices.IndexFunc(a.state.Workbook.Sheets, func(sheet WorkbookSheet) bool {
+		return sheet.Name == trimmedSheetName
+	})
+	if sheetIndex < 0 {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("Sheet %q was not found.", trimmedSheetName),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	changed, err := command.mutate(&a.state.Workbook.Sheets[sheetIndex], index, size)
+	if err != nil {
+		a.state.Status = AppStatus{
+			Kind:    statusKindError,
+			Message: fmt.Sprintf("Could not resize %s %d on sheet %q: %v", command.target, index, trimmedSheetName, err),
+			Busy:    false,
+		}
+
+		return cloneAppState(a.state)
+	}
+
+	if changed {
+		a.state.Workbook.Dirty = true
+		command.record(a, trimmedSheetName, index, size)
+		a.state.Status = AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
+
+		return cloneAppState(a.state)
+	}
+
+	message := defaultStatusMessage
+	if a.state.Workbook.Dirty {
+		message = unsavedChangesStatusMessage
+	}
+	a.state.Status = AppStatus{Kind: statusKindReady, Message: message, Busy: false}
+
+	return cloneAppState(a.state)
+}
+
 // SetScrollPosition changes the top-left visible cell coordinates.
 func (a *App) SetScrollPosition(topRow int, leftColumn int) AppState {
 	a.mu.Lock()
@@ -399,6 +549,10 @@ func (a *App) discardPendingEdits() {
 	defer a.mu.Unlock()
 
 	a.pendingCellEdits = map[string]map[string]string{}
+	a.pendingLayoutEdits = pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{},
+		RowHeights:   map[string]map[int]float64{},
+	}
 	a.state.Workbook.Dirty = false
 	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
 }
@@ -425,4 +579,24 @@ func (a *App) runMessageDialog(ctx context.Context, options runtime.MessageDialo
 	}
 
 	return runtime.MessageDialog(ctx, options)
+}
+
+type pendingLayoutEdits struct {
+	ColumnWidths map[string]map[int]float64
+	RowHeights   map[string]map[int]float64
+}
+
+func (p pendingLayoutEdits) clone() pendingLayoutEdits {
+	clone := pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{},
+		RowHeights:   map[string]map[int]float64{},
+	}
+	for sheetName, sheetEdits := range p.ColumnWidths {
+		clone.ColumnWidths[sheetName] = maps.Clone(sheetEdits)
+	}
+	for sheetName, sheetEdits := range p.RowHeights {
+		clone.RowHeights[sheetName] = maps.Clone(sheetEdits)
+	}
+
+	return clone
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -186,19 +187,21 @@ func TestInvalidViewCommandsSetErrorAndKeepView(t *testing.T) {
 	}
 }
 
-func TestPendingCellEditsInitialized(t *testing.T) {
+func TestPendingEditsInitialized(t *testing.T) {
 	t.Parallel()
 
 	app := NewApp()
 	if app.pendingCellEdits == nil {
-		t.Fatalf("expected NewApp to initialize pending edits")
+		t.Fatalf("expected NewApp to initialize pending cell edits")
 	}
+	assertNoPendingLayoutEdits(t, app)
 
 	var startupApp App
 	startupApp.startup(context.Background())
 	if startupApp.pendingCellEdits == nil {
-		t.Fatalf("expected startup to initialize pending edits")
+		t.Fatalf("expected startup to initialize pending cell edits")
 	}
+	assertNoPendingLayoutEdits(t, &startupApp)
 }
 
 func TestSetSheetCellValueInsertsSortedAndExpandsBounds(t *testing.T) {
@@ -320,6 +323,202 @@ func TestSetSheetCellValueClearSemantics(t *testing.T) {
 	}
 	if sheet.Bounds.Ref != "A1:B2" {
 		t.Fatalf("expected clear not to shrink bounds, got %#v", sheet.Bounds)
+	}
+}
+
+func TestSetSheetColumnWidthUpdatesInsertsAndPreservesMetadata(t *testing.T) {
+	t.Parallel()
+
+	sheet := WorkbookSheet{
+		DefaultColumnWidth: defaultColumnWidth,
+		Columns: []ColumnLayout{
+			{Index: 3, Name: "C", Width: 12.5, Hidden: true, OutlineLevel: 2, StyleID: 7},
+		},
+	}
+
+	changed, err := sheet.setColumnWidth(3, 22.75)
+	if err != nil || !changed {
+		t.Fatalf("expected existing column resize to change sheet, changed=%t err=%v", changed, err)
+	}
+	changed, err = sheet.setColumnWidth(2, 18.25)
+	if err != nil || !changed {
+		t.Fatalf("expected default column resize to create layout, changed=%t err=%v", changed, err)
+	}
+
+	want := []ColumnLayout{
+		{Index: 2, Name: "B", Width: 18.25},
+		{Index: 3, Name: "C", Width: 22.75, Hidden: true, OutlineLevel: 2, StyleID: 7},
+	}
+	if !reflect.DeepEqual(sheet.Columns, want) {
+		t.Fatalf("expected sorted column layouts with metadata preserved\nwant: %#v\ngot:  %#v", want, sheet.Columns)
+	}
+}
+
+func TestSetSheetRowHeightUpdatesInsertsAndPreservesMetadata(t *testing.T) {
+	t.Parallel()
+
+	sheet := WorkbookSheet{
+		DefaultRowHeight: defaultRowHeight,
+		Rows: []RowLayout{
+			{Index: 4, Height: 21.5, Hidden: true, OutlineLevel: 3},
+		},
+	}
+
+	changed, err := sheet.setRowHeight(4, 33.5)
+	if err != nil || !changed {
+		t.Fatalf("expected existing row resize to change sheet, changed=%t err=%v", changed, err)
+	}
+	changed, err = sheet.setRowHeight(2, 24.25)
+	if err != nil || !changed {
+		t.Fatalf("expected default row resize to create layout, changed=%t err=%v", changed, err)
+	}
+
+	want := []RowLayout{
+		{Index: 2, Height: 24.25},
+		{Index: 4, Height: 33.5, Hidden: true, OutlineLevel: 3},
+	}
+	if !reflect.DeepEqual(sheet.Rows, want) {
+		t.Fatalf("expected sorted row layouts with metadata preserved\nwant: %#v\ngot:  %#v", want, sheet.Rows)
+	}
+}
+
+func TestSetSheetLayoutSizeNoOpDoesNotMutate(t *testing.T) {
+	t.Parallel()
+
+	sheet := WorkbookSheet{
+		DefaultColumnWidth: defaultColumnWidth,
+		DefaultRowHeight:   defaultRowHeight,
+		Columns:            []ColumnLayout{{Index: 2, Name: "B", Width: 18.25}},
+		Rows:               []RowLayout{{Index: 3, Height: 28.5}},
+	}
+	beforeColumns := append([]ColumnLayout(nil), sheet.Columns...)
+	beforeRows := append([]RowLayout(nil), sheet.Rows...)
+
+	changed, err := sheet.setColumnWidth(2, 18.25)
+	if err != nil || changed {
+		t.Fatalf("expected existing column no-op, changed=%t err=%v", changed, err)
+	}
+	changed, err = sheet.setColumnWidth(4, defaultColumnWidth)
+	if err != nil || changed {
+		t.Fatalf("expected default column no-op, changed=%t err=%v", changed, err)
+	}
+	changed, err = sheet.setRowHeight(3, 28.5)
+	if err != nil || changed {
+		t.Fatalf("expected existing row no-op, changed=%t err=%v", changed, err)
+	}
+	changed, err = sheet.setRowHeight(5, defaultRowHeight)
+	if err != nil || changed {
+		t.Fatalf("expected default row no-op, changed=%t err=%v", changed, err)
+	}
+
+	if !reflect.DeepEqual(sheet.Columns, beforeColumns) || !reflect.DeepEqual(sheet.Rows, beforeRows) {
+		t.Fatalf("expected no-op layout changes to preserve slices, columns=%#v rows=%#v", sheet.Columns, sheet.Rows)
+	}
+}
+
+func TestSetSheetLayoutSizeRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*WorkbookSheet) (bool, error)
+	}{
+		{
+			name: "column below bounds",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(0, 12)
+			},
+		},
+		{
+			name: "column above bounds",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(maxExcelColumn+1, 12)
+			},
+		},
+		{
+			name: "column zero width",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(1, 0)
+			},
+		},
+		{
+			name: "column negative width",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(1, -1)
+			},
+		},
+		{
+			name: "column nan width",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(1, math.NaN())
+			},
+		},
+		{
+			name: "column infinite width",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setColumnWidth(1, math.Inf(1))
+			},
+		},
+		{
+			name: "row below bounds",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(0, 20)
+			},
+		},
+		{
+			name: "row above bounds",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(maxExcelRow+1, 20)
+			},
+		},
+		{
+			name: "row zero height",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(1, 0)
+			},
+		},
+		{
+			name: "row negative height",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(1, -1)
+			},
+		},
+		{
+			name: "row nan height",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(1, math.NaN())
+			},
+		},
+		{
+			name: "row infinite height",
+			mutate: func(sheet *WorkbookSheet) (bool, error) {
+				return sheet.setRowHeight(1, math.Inf(1))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sheet := WorkbookSheet{
+				DefaultColumnWidth: defaultColumnWidth,
+				DefaultRowHeight:   defaultRowHeight,
+				Columns:            []ColumnLayout{{Index: 2, Name: "B", Width: 18.25}},
+				Rows:               []RowLayout{{Index: 3, Height: 28.5}},
+			}
+			before := sheet
+			before.Columns = append([]ColumnLayout(nil), sheet.Columns...)
+			before.Rows = append([]RowLayout(nil), sheet.Rows...)
+
+			changed, err := tt.mutate(&sheet)
+			if err == nil || changed {
+				t.Fatalf("expected invalid layout mutation to fail without change, changed=%t err=%v", changed, err)
+			}
+			if !reflect.DeepEqual(sheet, before) {
+				t.Fatalf("expected invalid layout mutation to preserve sheet\nbefore: %#v\nafter:  %#v", before, sheet)
+			}
+		})
 	}
 }
 
@@ -524,6 +723,198 @@ func TestSetCellValuePendingEditsClearOnOpen(t *testing.T) {
 	}
 }
 
+func TestResizeCommandsCreateLayoutsAndRecordPendingEdits(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	state := app.SetColumnWidth(defaultSheetName, 2, 18.25)
+	if !state.Workbook.Dirty {
+		t.Fatalf("expected column resize to mark workbook dirty")
+	}
+	if state.Status != (AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}) {
+		t.Fatalf("expected unsaved ready status, got %#v", state.Status)
+	}
+	sheet := findSheet(t, state.Workbook, defaultSheetName)
+	column := findColumn(t, sheet, "B")
+	assertClose(t, "column B width", column.Width, 18.25)
+	assertPendingColumnWidth(t, app, defaultSheetName, 2, 18.25)
+
+	state = app.SetRowHeight(defaultSheetName, 3, 28.5)
+	if !state.Workbook.Dirty {
+		t.Fatalf("expected row resize to keep workbook dirty")
+	}
+	sheet = findSheet(t, state.Workbook, defaultSheetName)
+	row := findRow(t, sheet, 3)
+	assertClose(t, "row 3 height", row.Height, 28.5)
+	assertPendingRowHeight(t, app, defaultSheetName, 3, 28.5)
+
+	state = app.SetColumnWidth(defaultSheetName, 4, 19.5)
+	sheet = findSheet(t, state.Workbook, defaultSheetName)
+	column = findColumn(t, sheet, "D")
+	assertClose(t, "column D width", column.Width, 19.5)
+	assertPendingColumnWidth(t, app, defaultSheetName, 4, 19.5)
+
+	state = app.SetRowHeight(defaultSheetName, 4, 29.5)
+	sheet = findSheet(t, state.Workbook, defaultSheetName)
+	row = findRow(t, sheet, 4)
+	assertClose(t, "row 4 height", row.Height, 29.5)
+	assertPendingRowHeight(t, app, defaultSheetName, 4, 29.5)
+}
+
+func TestResizeCommandsUpdateExistingLayoutAndPreserveMetadata(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.state.Workbook.Sheets[0].Columns = []ColumnLayout{
+		{Index: 2, Name: "B", Width: 18.25, Hidden: true, OutlineLevel: 1, StyleID: 8},
+	}
+	app.state.Workbook.Sheets[0].Rows = []RowLayout{
+		{Index: 3, Height: 28.5, Hidden: true, OutlineLevel: 2},
+	}
+
+	app.SetColumnWidth(defaultSheetName, 2, 22.5)
+	state := app.SetRowHeight(defaultSheetName, 3, 31.25)
+	sheet := findSheet(t, state.Workbook, defaultSheetName)
+
+	column := findColumn(t, sheet, "B")
+	wantColumn := ColumnLayout{Index: 2, Name: "B", Width: 22.5, Hidden: true, OutlineLevel: 1, StyleID: 8}
+	if column != wantColumn {
+		t.Fatalf("expected column metadata to be preserved\nwant: %#v\ngot:  %#v", wantColumn, column)
+	}
+	row := findRow(t, sheet, 3)
+	wantRow := RowLayout{Index: 3, Height: 31.25, Hidden: true, OutlineLevel: 2}
+	if row != wantRow {
+		t.Fatalf("expected row metadata to be preserved\nwant: %#v\ngot:  %#v", wantRow, row)
+	}
+	assertPendingColumnWidth(t, app, defaultSheetName, 2, 22.5)
+	assertPendingRowHeight(t, app, defaultSheetName, 3, 31.25)
+}
+
+func TestResizeCommandsNoOpDoesNotDirtyCleanWorkbook(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.state.Workbook.Sheets[0].Columns = []ColumnLayout{{Index: 2, Name: "B", Width: 18.25}}
+	app.state.Workbook.Sheets[0].Rows = []RowLayout{{Index: 3, Height: 28.5}}
+
+	state := app.SetColumnWidth(defaultSheetName, 2, 18.25)
+	if state.Workbook.Dirty {
+		t.Fatalf("expected column no-op to keep workbook clean, got %#v", state.Workbook)
+	}
+	state = app.SetRowHeight(defaultSheetName, 3, 28.5)
+	if state.Workbook.Dirty {
+		t.Fatalf("expected row no-op to keep workbook clean, got %#v", state.Workbook)
+	}
+	if state.Status != (AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}) {
+		t.Fatalf("expected default ready status for no-op, got %#v", state.Status)
+	}
+	assertNoPendingLayoutEdits(t, app)
+}
+
+func TestResizeCommandsRejectInvalidInputAndPreserveState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		resize      func(*App) AppState
+		wantMessage string
+	}{
+		{
+			name: "empty column sheet",
+			resize: func(app *App) AppState {
+				return app.SetColumnWidth(" ", 1, 12)
+			},
+			wantMessage: "Sheet name is required",
+		},
+		{
+			name: "missing column sheet",
+			resize: func(app *App) AppState {
+				return app.SetColumnWidth("Missing", 1, 12)
+			},
+			wantMessage: "was not found",
+		},
+		{
+			name: "column index below bounds",
+			resize: func(app *App) AppState {
+				return app.SetColumnWidth(defaultSheetName, 0, 12)
+			},
+			wantMessage: "Column index must be between",
+		},
+		{
+			name: "column non-finite width",
+			resize: func(app *App) AppState {
+				return app.SetColumnWidth(defaultSheetName, 1, math.Inf(1))
+			},
+			wantMessage: "Column width must be a positive finite number",
+		},
+		{
+			name: "empty row sheet",
+			resize: func(app *App) AppState {
+				return app.SetRowHeight(" ", 1, 20)
+			},
+			wantMessage: "Sheet name is required",
+		},
+		{
+			name: "row index above bounds",
+			resize: func(app *App) AppState {
+				return app.SetRowHeight(defaultSheetName, maxExcelRow+1, 20)
+			},
+			wantMessage: "Row index must be between",
+		},
+		{
+			name: "row invalid height",
+			resize: func(app *App) AppState {
+				return app.SetRowHeight(defaultSheetName, 1, 0)
+			},
+			wantMessage: "Row height must be a positive finite number",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := NewApp()
+			app.SetColumnWidth(defaultSheetName, 2, 18.25)
+			app.SetRowHeight(defaultSheetName, 3, 28.5)
+			before := app.State()
+			state := tt.resize(app)
+			if state.Status.Kind != statusKindError || state.Status.Busy {
+				t.Fatalf("expected error status without busy flag, got %#v", state.Status)
+			}
+			if !strings.Contains(state.Status.Message, tt.wantMessage) {
+				t.Fatalf("expected error containing %q, got %q", tt.wantMessage, state.Status.Message)
+			}
+			if !reflect.DeepEqual(state.Workbook, before.Workbook) || state.View != before.View {
+				t.Fatalf("expected invalid resize to preserve state\nbefore: %#v\nafter:  %#v", before, state)
+			}
+			assertPendingColumnWidth(t, app, defaultSheetName, 2, 18.25)
+			assertPendingRowHeight(t, app, defaultSheetName, 3, 28.5)
+		})
+	}
+}
+
+func TestResizePendingLayoutEditsClearOnOpen(t *testing.T) {
+	t.Parallel()
+
+	path := createWorkbookFixture(t)
+	app := NewApp()
+	app.SetColumnWidth(defaultSheetName, 2, 18.25)
+	state := app.SetRowHeight(defaultSheetName, 3, 28.5)
+	if !state.Workbook.Dirty {
+		t.Fatalf("expected resizes to mark workbook dirty")
+	}
+	assertPendingColumnWidth(t, app, defaultSheetName, 2, 18.25)
+	assertPendingRowHeight(t, app, defaultSheetName, 3, 28.5)
+
+	opened := app.OpenWorkbookPath(path)
+	assertReadyStatus(t, opened.Status)
+	if opened.Workbook.Dirty {
+		t.Fatalf("expected opened workbook to be clean, got %#v", opened.Workbook)
+	}
+	assertNoPendingLayoutEdits(t, app)
+}
+
 func mustParseCellAddress(t *testing.T, ref string) CellAddress {
 	t.Helper()
 
@@ -569,6 +960,47 @@ func assertPendingEdit(t *testing.T, app *App, sheetName string, cellRef string,
 	}
 	if got != value {
 		t.Fatalf("expected pending edit %s!%s=%q, got %q", sheetName, cellRef, value, got)
+	}
+}
+
+func assertPendingColumnWidth(t *testing.T, app *App, sheetName string, columnIndex int, width float64) {
+	t.Helper()
+
+	sheetEdits, ok := app.pendingLayoutEdits.ColumnWidths[sheetName]
+	if !ok {
+		t.Fatalf("expected pending column widths for sheet %q, got %#v", sheetName, app.pendingLayoutEdits.ColumnWidths)
+	}
+	got, ok := sheetEdits[columnIndex]
+	if !ok {
+		t.Fatalf(
+			"expected pending column width for %s!%d, got %#v",
+			sheetName,
+			columnIndex,
+			app.pendingLayoutEdits.ColumnWidths,
+		)
+	}
+	assertClose(t, fmt.Sprintf("pending column width %s!%d", sheetName, columnIndex), got, width)
+}
+
+func assertPendingRowHeight(t *testing.T, app *App, sheetName string, rowIndex int, height float64) {
+	t.Helper()
+
+	sheetEdits, ok := app.pendingLayoutEdits.RowHeights[sheetName]
+	if !ok {
+		t.Fatalf("expected pending row heights for sheet %q, got %#v", sheetName, app.pendingLayoutEdits.RowHeights)
+	}
+	got, ok := sheetEdits[rowIndex]
+	if !ok {
+		t.Fatalf("expected pending row height for %s!%d, got %#v", sheetName, rowIndex, app.pendingLayoutEdits.RowHeights)
+	}
+	assertClose(t, fmt.Sprintf("pending row height %s!%d", sheetName, rowIndex), got, height)
+}
+
+func assertNoPendingLayoutEdits(t *testing.T, app *App) {
+	t.Helper()
+
+	if len(app.pendingLayoutEdits.ColumnWidths) != 0 || len(app.pendingLayoutEdits.RowHeights) != 0 {
+		t.Fatalf("expected no pending layout edits, got %#v", app.pendingLayoutEdits)
 	}
 }
 

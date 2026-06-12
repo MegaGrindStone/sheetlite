@@ -97,6 +97,10 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 		Appearance: appearance,
 	}
 	a.pendingCellEdits = map[string]map[string]string{}
+	a.pendingLayoutEdits = pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{},
+		RowHeights:   map[string]map[int]float64{},
+	}
 
 	return cloneAppState(a.state)
 }
@@ -299,10 +303,11 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 	for sheetName, sheetEdits := range a.pendingCellEdits {
 		pendingEdits[sheetName] = maps.Clone(sheetEdits)
 	}
+	layoutEdits := a.pendingLayoutEdits.clone()
 	a.state.Status = AppStatus{Kind: statusKindLoading, Message: savingWorkbookMessage, Busy: true}
 	a.mu.Unlock()
 
-	savedPath, err := saveWorkbookFile(workbook, pendingEdits, targetPath)
+	savedPath, err := saveWorkbookFile(workbook, pendingEdits, layoutEdits, targetPath)
 	if err != nil {
 		a.mu.Lock()
 		defer a.mu.Unlock()
@@ -326,6 +331,10 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 	}
 	a.state.Workbook.Dirty = false
 	a.pendingCellEdits = map[string]map[string]string{}
+	a.pendingLayoutEdits = pendingLayoutEdits{
+		ColumnWidths: map[string]map[int]float64{},
+		RowHeights:   map[string]map[int]float64{},
+	}
 	a.state.Status = AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
@@ -334,10 +343,11 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 func saveWorkbookFile(
 	workbook WorkbookState,
 	pendingEdits map[string]map[string]string,
+	pendingLayoutEdits pendingLayoutEdits,
 	targetPath string,
 ) (string, error) {
 	if strings.TrimSpace(workbook.FilePath) != "" {
-		return saveOpenedWorkbook(workbook.FilePath, pendingEdits, targetPath)
+		return saveOpenedWorkbook(workbook.FilePath, pendingEdits, pendingLayoutEdits, targetPath)
 	}
 
 	return saveUntitledWorkbook(workbook, targetPath)
@@ -346,6 +356,7 @@ func saveWorkbookFile(
 func saveOpenedWorkbook(
 	sourcePath string,
 	pendingEdits map[string]map[string]string,
+	pendingLayoutEdits pendingLayoutEdits,
 	targetPath string,
 ) (string, error) {
 	workbookPath, err := validateWorkbookPath(sourcePath)
@@ -361,6 +372,12 @@ func saveOpenedWorkbook(
 	defer file.Close()
 
 	if err := applyPendingCellEdits(file, pendingEdits); err != nil {
+		return "", err
+	}
+	if err := applyPendingColumnWidths(file, pendingLayoutEdits.ColumnWidths); err != nil {
+		return "", err
+	}
+	if err := applyPendingRowHeights(file, pendingLayoutEdits.RowHeights); err != nil {
 		return "", err
 	}
 
@@ -383,7 +400,7 @@ func saveUntitledWorkbook(workbook WorkbookState, targetPath string) (string, er
 	file := excelize.NewFile()
 	defer file.Close()
 
-	// Untitled saves intentionally write only current non-empty text cells.
+	// Untitled saves intentionally write only current non-empty text cells and dimensions.
 	sheets := workbook.Sheets
 	if len(sheets) == 0 {
 		sheets = []WorkbookSheet{{Name: defaultSheetName}}
@@ -418,6 +435,9 @@ func saveUntitledWorkbook(workbook WorkbookState, targetPath string) (string, er
 			if err := file.SetCellStr(sheetName, cell.Ref, value); err != nil {
 				return "", err
 			}
+		}
+		if err := applySheetLayouts(file, sheetName, sheet); err != nil {
+			return "", err
 		}
 	}
 
@@ -459,6 +479,134 @@ func applyPendingCellEdits(file *excelize.File, pendingEdits map[string]map[stri
 	}
 
 	return nil
+}
+
+func applyPendingColumnWidths(file *excelize.File, pendingWidths map[string]map[int]float64) error {
+	sheetNames := make([]string, 0, len(pendingWidths))
+	for sheetName := range pendingWidths {
+		sheetNames = append(sheetNames, sheetName)
+	}
+	// Map iteration order is random; stable write order keeps errors deterministic.
+	slices.Sort(sheetNames)
+
+	for _, sheetName := range sheetNames {
+		sheetIndex, err := file.GetSheetIndex(sheetName)
+		if err != nil {
+			return err
+		}
+		if sheetIndex < 0 {
+			return fmt.Errorf("sheet %q was not found", sheetName)
+		}
+
+		columnIndexes := make([]int, 0, len(pendingWidths[sheetName]))
+		for columnIndex := range pendingWidths[sheetName] {
+			columnIndexes = append(columnIndexes, columnIndex)
+		}
+		// Keep column application order stable for deterministic save failures.
+		slices.Sort(columnIndexes)
+
+		for _, columnIndex := range columnIndexes {
+			width := pendingWidths[sheetName][columnIndex]
+			if err := setColumnWidth(file, sheetName, columnIndex, width); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func applyPendingRowHeights(file *excelize.File, pendingHeights map[string]map[int]float64) error {
+	sheetNames := make([]string, 0, len(pendingHeights))
+	for sheetName := range pendingHeights {
+		sheetNames = append(sheetNames, sheetName)
+	}
+	// Map iteration order is random; stable write order keeps errors deterministic.
+	slices.Sort(sheetNames)
+
+	for _, sheetName := range sheetNames {
+		sheetIndex, err := file.GetSheetIndex(sheetName)
+		if err != nil {
+			return err
+		}
+		if sheetIndex < 0 {
+			return fmt.Errorf("sheet %q was not found", sheetName)
+		}
+
+		rowIndexes := make([]int, 0, len(pendingHeights[sheetName]))
+		for rowIndex := range pendingHeights[sheetName] {
+			rowIndexes = append(rowIndexes, rowIndex)
+		}
+		// Keep row application order stable for deterministic save failures.
+		slices.Sort(rowIndexes)
+
+		for _, rowIndex := range rowIndexes {
+			height := pendingHeights[sheetName][rowIndex]
+			if err := setRowHeight(file, sheetName, rowIndex, height); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func applySheetLayouts(file *excelize.File, sheetName string, sheet WorkbookSheet) error {
+	// Untitled workbooks save from in-memory layout slices, so sort copies before writing.
+	columns := slices.Clone(sheet.Columns)
+	slices.SortFunc(columns, func(left ColumnLayout, right ColumnLayout) int {
+		return left.Index - right.Index
+	})
+	for _, column := range columns {
+		if column.Hidden || !validLayoutDimension(column.Width) {
+			continue
+		}
+		if err := setColumnWidth(file, sheetName, column.Index, column.Width); err != nil {
+			return err
+		}
+	}
+
+	rows := slices.Clone(sheet.Rows)
+	slices.SortFunc(rows, func(left RowLayout, right RowLayout) int {
+		return left.Index - right.Index
+	})
+	for _, row := range rows {
+		if row.Hidden || !validLayoutDimension(row.Height) {
+			continue
+		}
+		if err := setRowHeight(file, sheetName, row.Index, row.Height); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setColumnWidth(file *excelize.File, sheetName string, columnIndex int, width float64) error {
+	if columnIndex < minExcelColumn || columnIndex > maxExcelColumn {
+		return fmt.Errorf("column index must be between %d and %d", minExcelColumn, maxExcelColumn)
+	}
+	if !validLayoutDimension(width) {
+		return errors.New("column width must be a positive finite number")
+	}
+
+	columnName, err := excelize.ColumnNumberToName(columnIndex)
+	if err != nil {
+		return err
+	}
+
+	return file.SetColWidth(sheetName, columnName, columnName, width)
+}
+
+func setRowHeight(file *excelize.File, sheetName string, rowIndex int, height float64) error {
+	if rowIndex < minExcelRow || rowIndex > maxExcelRow {
+		return fmt.Errorf("row index must be between %d and %d", minExcelRow, maxExcelRow)
+	}
+	if !validLayoutDimension(height) {
+		return errors.New("row height must be a positive finite number")
+	}
+
+	return file.SetRowHeight(sheetName, rowIndex, height)
 }
 
 func normalizeSavePath(path string) (string, error) {

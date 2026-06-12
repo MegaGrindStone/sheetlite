@@ -42,6 +42,14 @@ export function SetCellValue(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetCellValue'](arg1, arg2, arg3);
 }
 
+export function SetColumnWidth(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetColumnWidth'](arg1, arg2, arg3);
+}
+
+export function SetRowHeight(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetRowHeight'](arg1, arg2, arg3);
+}
+
 export function SetScrollPosition(arg1, arg2) {
   return window['go']['main']['App']['SetScrollPosition'](arg1, arg2);
 }
