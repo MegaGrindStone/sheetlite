@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Exit command in File menu dropdown that closes the app via the Wails runtime Quit function
 - Stateful App struct with synchronized AppState and view-model methods
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom),
   with SelectCell synchronizing the selection range

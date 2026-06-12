@@ -24,7 +24,7 @@
 		SetZoom
 	} from '$lib/wailsjs/go/main/App';
 	import type { main } from '$lib/wailsjs/go/models';
-	import { OnFileDrop, OnFileDropOff } from '$lib/wailsjs/runtime/runtime';
+	import { OnFileDrop, OnFileDropOff, Quit } from '$lib/wailsjs/runtime/runtime';
 	import TopChrome from './TopChrome.svelte';
 	import FormulaBar from './FormulaBar.svelte';
 	import SideRail from './SideRail.svelte';
@@ -265,6 +265,7 @@
 			onOpenWorkbook={openWorkbook}
 			onSaveWorkbook={saveWorkbook}
 			onSaveWorkbookAs={saveWorkbookAs}
+			onExitApp={Quit}
 			onSetAppearanceMode={setAppearanceMode}
 		/>
 	</header>

@@ -4,7 +4,7 @@
 	import type { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
 
-	type FileCommand = 'open' | 'save' | 'save-as';
+	type FileCommand = 'open' | 'save' | 'save-as' | 'exit';
 
 	type Props = {
 		workbook?: main.WorkbookState;
@@ -13,6 +13,7 @@
 		onOpenWorkbook?: () => Promise<void> | void;
 		onSaveWorkbook?: () => Promise<void> | void;
 		onSaveWorkbookAs?: () => Promise<void> | void;
+		onExitApp?: () => Promise<void> | void;
 		onSetAppearanceMode?: (mode: AppearanceMode) => Promise<void> | void;
 	};
 
@@ -23,6 +24,7 @@
 		onOpenWorkbook,
 		onSaveWorkbook,
 		onSaveWorkbookAs,
+		onExitApp,
 		onSetAppearanceMode
 	}: Props = $props();
 	let fileMenuOpen = $state(false);
@@ -37,13 +39,16 @@
 	const statusLabel = $derived(status?.busy ? 'Working…' : statusMessage);
 	const statusTitle = $derived(`${statusKind}: ${statusMessage}`);
 	const commandBusy = $derived(Boolean(status?.busy) || activeFileCommand !== null);
-	const hasFileActions = $derived(Boolean(onOpenWorkbook || onSaveWorkbook || onSaveWorkbookAs));
+	const hasFileActions = $derived(
+		Boolean(onOpenWorkbook || onSaveWorkbook || onSaveWorkbookAs || onExitApp)
+	);
 	const canUseFileMenu = $derived(hasFileActions && !commandBusy);
 	const canOpenWorkbook = $derived(Boolean(onOpenWorkbook) && !commandBusy);
 	const canSaveWorkbook = $derived(
 		Boolean(onSaveWorkbook) && workbookReady && !commandBusy && (workbookDirty || workbookUnsaved)
 	);
 	const canSaveWorkbookAs = $derived(Boolean(onSaveWorkbookAs) && workbookReady && !commandBusy);
+	const canExitApp = $derived(Boolean(onExitApp) && !commandBusy);
 	const showFileMenu = $derived(fileMenuOpen && canUseFileMenu);
 	const fileMenuTitle = $derived(
 		!hasFileActions
@@ -99,6 +104,10 @@
 
 	function handleSaveWorkbookAs(): Promise<void> {
 		return runFileCommand('save-as', canSaveWorkbookAs ? onSaveWorkbookAs : undefined);
+	}
+
+	function handleExitApp(): Promise<void> {
+		return runFileCommand('exit', canExitApp ? onExitApp : undefined);
 	}
 
 	const fileMenuBehavior: Attachment<HTMLDivElement> = (node) => {
@@ -225,6 +234,16 @@
 						>
 							<span class="file-menu-command-label">{saveWorkbookAsLabel}</span>
 							<span class="file-menu-command-meta">Choose location</span>
+						</button>
+						<div class="file-menu-separator" aria-hidden="true"></div>
+						<button
+							type="button"
+							class="file-menu-command"
+							disabled={!canExitApp}
+							onclick={handleExitApp}
+						>
+							<span class="file-menu-command-label">Exit</span>
+							<span class="file-menu-command-meta">Close app</span>
 						</button>
 					</div>
 				{/if}
