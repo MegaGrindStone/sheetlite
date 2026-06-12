@@ -111,8 +111,7 @@ func TestOpenWorkbookPathAppliesCurrentAppearanceRenderStyles(t *testing.T) {
 	dataSheet := assertLoadedSheetsAndView(t, state)
 	styleID := assertLoadedCells(t, dataSheet)
 
-	defaultStyle := findStyle(t, state.Workbook.Styles, 0)
-	assertReadableDarkRender(t, defaultStyle, darkGridSurfaceRGB.cssColor())
+	assertStyleMissing(t, state.Workbook.Styles, 0)
 
 	loadedStyle := findStyle(t, state.Workbook.Styles, styleID)
 	assertReadableDarkRender(t, loadedStyle, loadedStyle.Fill.Color)

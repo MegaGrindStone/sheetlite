@@ -189,8 +189,8 @@ func loadWorkbookFile(file *excelize.File, path string) (WorkbookState, Workbook
 		return WorkbookState{}, WorkbookViewState{}, errors.New("workbook does not contain any sheets")
 	}
 
-	// Include the default style so renderers always have a fallback style entry.
-	styleIDs := map[int]struct{}{0: {}}
+	// Style 0 is the workbook default and intentionally falls through to app/grid CSS.
+	styleIDs := map[int]struct{}{}
 	sheets := make([]WorkbookSheet, 0, len(sheetNames))
 	for index, sheetName := range sheetNames {
 		sheet, sheetStyleIDs, err := loadWorkbookSheet(file, sheetName, index)

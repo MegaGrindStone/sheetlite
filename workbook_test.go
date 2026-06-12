@@ -249,7 +249,7 @@ func assertLoadedLayout(t *testing.T, dataSheet WorkbookSheet) {
 func assertLoadedStyle(t *testing.T, styles []CellStyle, styleID int) {
 	t.Helper()
 
-	findStyle(t, styles, 0)
+	assertStyleMissing(t, styles, 0)
 	style := findStyle(t, styles, styleID)
 	if style.NumberFormatID != 2 || style.NumberFormat != "0.00" {
 		t.Fatalf("expected number format mapping, got %#v", style)
@@ -421,6 +421,16 @@ func findStyle(t *testing.T, styles []CellStyle, id int) CellStyle {
 
 	t.Fatalf("style %d not found in %#v", id, styles)
 	return CellStyle{}
+}
+
+func assertStyleMissing(t *testing.T, styles []CellStyle, id int) {
+	t.Helper()
+
+	for _, style := range styles {
+		if style.ID == id {
+			t.Fatalf("expected style %d to be omitted, got %#v", id, styles)
+		}
+	}
 }
 
 func findBorder(t *testing.T, style CellStyle, side BorderSide) CellBorderStyle {
