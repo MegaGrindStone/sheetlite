@@ -16,11 +16,33 @@ const (
 	layoutDimensionTolerance   = 0.000001
 )
 
+// SheetState describes workbook sheet visibility state.
+type SheetState string
+
+const (
+	// SheetStateVisible marks a visible worksheet.
+	SheetStateVisible SheetState = "visible"
+	// SheetStateHidden marks a hidden worksheet.
+	SheetStateHidden SheetState = "hidden"
+	// SheetStateVeryHidden marks a worksheet hidden from Excel's normal UI.
+	SheetStateVeryHidden SheetState = "veryHidden"
+)
+
+// AllSheetStates lists SheetState values for Wails enum binding.
+var AllSheetStates = []struct {
+	Value  SheetState
+	TSName string
+}{
+	{SheetStateVisible, "Visible"},
+	{SheetStateHidden, "Hidden"},
+	{SheetStateVeryHidden, "VeryHidden"},
+}
+
 // WorkbookSheet describes one worksheet and the loaded data for it.
 type WorkbookSheet struct {
 	Index              int               `json:"index"`
 	Name               string            `json:"name"`
-	State              string            `json:"state"`
+	State              SheetState        `json:"state"`
 	Visible            bool              `json:"visible"`
 	Bounds             CellRange         `json:"bounds"`
 	DefaultColumnWidth float64           `json:"defaultColumnWidth"`
@@ -154,7 +176,7 @@ func (w *WorkbookSheet) setCellValue(address CellAddress, value string) (bool, e
 		nextCell.RawValue = value
 		nextCell.Formula = ""
 		nextCell.HasFormula = false
-		nextCell.Kind = cellKindString
+		nextCell.Kind = CellKindString
 
 		// Formula metadata and bounds can make an edit meaningful even when text matches.
 		changed := nextCell != oldCell || expandedBounds != w.Bounds
@@ -181,7 +203,7 @@ func (w *WorkbookSheet) setCellValue(address CellAddress, value string) (bool, e
 		Column:   address.Column,
 		Value:    value,
 		RawValue: value,
-		Kind:     cellKindString,
+		Kind:     CellKindString,
 	})
 	w.Bounds = expandedBounds
 	slices.SortFunc(w.Cells, func(left CellData, right CellData) int {
@@ -212,7 +234,7 @@ func (w *WorkbookSheet) clearCellValue(address CellAddress) bool {
 	nextCell.RawValue = ""
 	nextCell.Formula = ""
 	nextCell.HasFormula = false
-	nextCell.Kind = ""
+	nextCell.Kind = CellKindUnset
 
 	// Styled blanks stay in the sparse model so clears do not drop formatting.
 	if nextCell.StyleID == 0 {
@@ -518,23 +540,32 @@ func sheetDefaults(file *excelize.File, sheetName string) (float64, float64) {
 	return defaultColWidth, defaultRowHeightValue
 }
 
-func sheetVisibility(file *excelize.File, sheetName string) (string, bool, error) {
+func sheetVisibility(file *excelize.File, sheetName string) (SheetState, bool, error) {
 	visible, err := file.GetSheetVisible(sheetName)
 	if err != nil {
 		return "", false, err
 	}
 
-	// Excelize exposes visibility as bool; keep the workbook state string when available.
-	state := workbookSheetState(file, sheetName)
-	if state == "" {
-		if visible {
-			state = sheetStateVisible
-		} else {
-			state = "hidden"
-		}
-	}
+	state := normalizeSheetState(workbookSheetState(file, sheetName), visible)
 
 	return state, visible, nil
+}
+
+func normalizeSheetState(state string, visible bool) SheetState {
+	switch SheetState(state) {
+	case SheetStateVisible:
+		return SheetStateVisible
+	case SheetStateHidden:
+		return SheetStateHidden
+	case SheetStateVeryHidden:
+		return SheetStateVeryHidden
+	default:
+		if visible {
+			return SheetStateVisible
+		}
+
+		return SheetStateHidden
+	}
 }
 
 func workbookSheetState(file *excelize.File, sheetName string) string {

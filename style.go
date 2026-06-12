@@ -8,6 +8,149 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// FontUnderlineStyle describes supported font underline values.
+type FontUnderlineStyle string
+
+const (
+	// FontUnderlineStyleNone marks fonts without underline.
+	FontUnderlineStyleNone FontUnderlineStyle = "none"
+	// FontUnderlineStyleSingle marks single-underlined fonts.
+	FontUnderlineStyleSingle FontUnderlineStyle = "single"
+	// FontUnderlineStyleDouble marks double-underlined fonts.
+	FontUnderlineStyleDouble FontUnderlineStyle = "double"
+)
+
+// AllFontUnderlineStyles lists FontUnderlineStyle values for Wails enum binding.
+var AllFontUnderlineStyles = []struct {
+	Value  FontUnderlineStyle
+	TSName string
+}{
+	{FontUnderlineStyleNone, "None"},
+	{FontUnderlineStyleSingle, "Single"},
+	{FontUnderlineStyleDouble, "Double"},
+}
+
+// FillType describes supported cell fill types.
+type FillType string
+
+const (
+	// FillTypeNone marks cells without fill metadata.
+	FillTypeNone FillType = "none"
+	// FillTypePattern marks pattern fills.
+	FillTypePattern FillType = "pattern"
+	// FillTypeGradient marks gradient fills.
+	FillTypeGradient FillType = "gradient"
+)
+
+// AllFillTypes lists FillType values for Wails enum binding.
+var AllFillTypes = []struct {
+	Value  FillType
+	TSName string
+}{
+	{FillTypeNone, "None"},
+	{FillTypePattern, "Pattern"},
+	{FillTypeGradient, "Gradient"},
+}
+
+// HorizontalAlignment describes supported horizontal alignment values.
+type HorizontalAlignment string
+
+const (
+	// HorizontalAlignmentGeneral marks default horizontal alignment.
+	HorizontalAlignmentGeneral HorizontalAlignment = "general"
+	// HorizontalAlignmentLeft aligns content left.
+	HorizontalAlignmentLeft HorizontalAlignment = "left"
+	// HorizontalAlignmentCenter aligns content in the center.
+	HorizontalAlignmentCenter HorizontalAlignment = "center"
+	// HorizontalAlignmentRight aligns content right.
+	HorizontalAlignmentRight HorizontalAlignment = "right"
+	// HorizontalAlignmentFill fills content across the cell.
+	HorizontalAlignmentFill HorizontalAlignment = "fill"
+	// HorizontalAlignmentJustify justifies content horizontally.
+	HorizontalAlignmentJustify HorizontalAlignment = "justify"
+	// HorizontalAlignmentCenterContinuous centers content across selected cells.
+	HorizontalAlignmentCenterContinuous HorizontalAlignment = "centerContinuous"
+	// HorizontalAlignmentDistributed distributes content horizontally.
+	HorizontalAlignmentDistributed HorizontalAlignment = "distributed"
+)
+
+// AllHorizontalAlignments lists HorizontalAlignment values for Wails enum binding.
+var AllHorizontalAlignments = []struct {
+	Value  HorizontalAlignment
+	TSName string
+}{
+	{HorizontalAlignmentGeneral, "General"},
+	{HorizontalAlignmentLeft, "Left"},
+	{HorizontalAlignmentCenter, "Center"},
+	{HorizontalAlignmentRight, "Right"},
+	{HorizontalAlignmentFill, "Fill"},
+	{HorizontalAlignmentJustify, "Justify"},
+	{HorizontalAlignmentCenterContinuous, "CenterContinuous"},
+	{HorizontalAlignmentDistributed, "Distributed"},
+}
+
+// VerticalAlignment describes supported vertical alignment values.
+type VerticalAlignment string
+
+const (
+	// VerticalAlignmentGeneral marks default vertical alignment.
+	VerticalAlignmentGeneral VerticalAlignment = "general"
+	// VerticalAlignmentTop aligns content to the top.
+	VerticalAlignmentTop VerticalAlignment = "top"
+	// VerticalAlignmentCenter aligns content vertically centered.
+	VerticalAlignmentCenter VerticalAlignment = "center"
+	// VerticalAlignmentBottom aligns content to the bottom.
+	VerticalAlignmentBottom VerticalAlignment = "bottom"
+	// VerticalAlignmentJustify justifies content vertically.
+	VerticalAlignmentJustify VerticalAlignment = "justify"
+	// VerticalAlignmentDistributed distributes content vertically.
+	VerticalAlignmentDistributed VerticalAlignment = "distributed"
+)
+
+// AllVerticalAlignments lists VerticalAlignment values for Wails enum binding.
+var AllVerticalAlignments = []struct {
+	Value  VerticalAlignment
+	TSName string
+}{
+	{VerticalAlignmentGeneral, "General"},
+	{VerticalAlignmentTop, "Top"},
+	{VerticalAlignmentCenter, "Center"},
+	{VerticalAlignmentBottom, "Bottom"},
+	{VerticalAlignmentJustify, "Justify"},
+	{VerticalAlignmentDistributed, "Distributed"},
+}
+
+// BorderSide describes supported cell border sides.
+type BorderSide string
+
+const (
+	// BorderSideLeft marks the left border.
+	BorderSideLeft BorderSide = "left"
+	// BorderSideRight marks the right border.
+	BorderSideRight BorderSide = "right"
+	// BorderSideTop marks the top border.
+	BorderSideTop BorderSide = "top"
+	// BorderSideBottom marks the bottom border.
+	BorderSideBottom BorderSide = "bottom"
+	// BorderSideDiagonalUp marks a diagonal-up border.
+	BorderSideDiagonalUp BorderSide = "diagonalUp"
+	// BorderSideDiagonalDown marks a diagonal-down border.
+	BorderSideDiagonalDown BorderSide = "diagonalDown"
+)
+
+// AllBorderSides lists BorderSide values for Wails enum binding.
+var AllBorderSides = []struct {
+	Value  BorderSide
+	TSName string
+}{
+	{BorderSideLeft, "Left"},
+	{BorderSideRight, "Right"},
+	{BorderSideTop, "Top"},
+	{BorderSideBottom, "Bottom"},
+	{BorderSideDiagonalUp, "DiagonalUp"},
+	{BorderSideDiagonalDown, "DiagonalDown"},
+}
+
 // CellStyle describes basic cell formatting metadata.
 type CellStyle struct {
 	ID             int                `json:"id"`
@@ -22,18 +165,18 @@ type CellStyle struct {
 
 // CellFontStyle describes cell font formatting metadata.
 type CellFontStyle struct {
-	Family        string  `json:"family"`
-	Size          float64 `json:"size"`
-	Bold          bool    `json:"bold"`
-	Italic        bool    `json:"italic"`
-	Underline     string  `json:"underline"`
-	Strikethrough bool    `json:"strikethrough"`
-	Color         string  `json:"color"`
+	Family        string             `json:"family"`
+	Size          float64            `json:"size"`
+	Bold          bool               `json:"bold"`
+	Italic        bool               `json:"italic"`
+	Underline     FontUnderlineStyle `json:"underline"`
+	Strikethrough bool               `json:"strikethrough"`
+	Color         string             `json:"color"`
 }
 
 // CellFillStyle describes cell fill formatting metadata.
 type CellFillStyle struct {
-	Type    string   `json:"type"`
+	Type    FillType `json:"type"`
 	Pattern int      `json:"pattern"`
 	Color   string   `json:"color"`
 	Colors  []string `json:"colors"`
@@ -41,17 +184,17 @@ type CellFillStyle struct {
 
 // CellAlignmentStyle describes cell text alignment metadata.
 type CellAlignmentStyle struct {
-	Horizontal   string `json:"horizontal"`
-	Vertical     string `json:"vertical"`
-	WrapText     bool   `json:"wrapText"`
-	TextRotation int    `json:"textRotation"`
+	Horizontal   HorizontalAlignment `json:"horizontal"`
+	Vertical     VerticalAlignment   `json:"vertical"`
+	WrapText     bool                `json:"wrapText"`
+	TextRotation int                 `json:"textRotation"`
 }
 
 // CellBorderStyle describes one side of cell border formatting metadata.
 type CellBorderStyle struct {
-	Side  string `json:"side"`
-	Style int    `json:"style"`
-	Color string `json:"color"`
+	Side  BorderSide `json:"side"`
+	Style int        `json:"style"`
+	Color string     `json:"color"`
 }
 
 // CellRenderStyle describes display-only cell style metadata derived by the backend.
@@ -119,19 +262,33 @@ func loadCellStyles(file *excelize.File, styleIDs map[int]struct{}) ([]CellStyle
 }
 
 func cellStyleFromExcelStyle(file *excelize.File, styleID int, excelStyle *excelize.Style) CellStyle {
+	style := CellStyle{
+		ID: styleID,
+		Font: CellFontStyle{
+			Underline: FontUnderlineStyleNone,
+		},
+		Fill: CellFillStyle{
+			Type:   FillTypeNone,
+			Colors: []string{},
+		},
+		Alignment: CellAlignmentStyle{
+			Horizontal: HorizontalAlignmentGeneral,
+			Vertical:   VerticalAlignmentGeneral,
+		},
+		Borders: []CellBorderStyle{},
+	}
 	if excelStyle == nil {
-		return CellStyle{ID: styleID}
+		return style
 	}
 
-	return CellStyle{
-		ID:             styleID,
-		NumberFormatID: excelStyle.NumFmt,
-		NumberFormat:   numberFormatCode(excelStyle),
-		Font:           fontStyleFromExcelStyle(file, excelStyle.Font),
-		Fill:           fillStyleFromExcelStyle(excelStyle.Fill),
-		Alignment:      alignmentStyleFromExcelStyle(excelStyle.Alignment),
-		Borders:        borderStylesFromExcelStyle(excelStyle.Border),
-	}
+	style.NumberFormatID = excelStyle.NumFmt
+	style.NumberFormat = numberFormatCode(excelStyle)
+	style.Font = fontStyleFromExcelStyle(file, excelStyle.Font)
+	style.Fill = fillStyleFromExcelStyle(excelStyle.Fill)
+	style.Alignment = alignmentStyleFromExcelStyle(excelStyle.Alignment)
+	style.Borders = borderStylesFromExcelStyle(excelStyle.Border)
+
+	return style
 }
 
 func numberFormatCode(excelStyle *excelize.Style) string {
@@ -150,7 +307,7 @@ func numberFormatCode(excelStyle *excelize.Style) string {
 
 func fontStyleFromExcelStyle(file *excelize.File, font *excelize.Font) CellFontStyle {
 	if font == nil {
-		return CellFontStyle{}
+		return CellFontStyle{Underline: FontUnderlineStyleNone}
 	}
 
 	color := font.Color
@@ -164,7 +321,7 @@ func fontStyleFromExcelStyle(file *excelize.File, font *excelize.Font) CellFontS
 		Size:          font.Size,
 		Bold:          font.Bold,
 		Italic:        font.Italic,
-		Underline:     font.Underline,
+		Underline:     normalizeFontUnderlineStyle(font.Underline),
 		Strikethrough: font.Strike,
 		Color:         cssColor(color),
 	}
@@ -184,7 +341,7 @@ func fillStyleFromExcelStyle(fill excelize.Fill) CellFillStyle {
 	}
 
 	return CellFillStyle{
-		Type:    fill.Type,
+		Type:    normalizeFillType(fill.Type),
 		Pattern: fill.Pattern,
 		Color:   color,
 		Colors:  colors,
@@ -193,12 +350,15 @@ func fillStyleFromExcelStyle(fill excelize.Fill) CellFillStyle {
 
 func alignmentStyleFromExcelStyle(alignment *excelize.Alignment) CellAlignmentStyle {
 	if alignment == nil {
-		return CellAlignmentStyle{}
+		return CellAlignmentStyle{
+			Horizontal: HorizontalAlignmentGeneral,
+			Vertical:   VerticalAlignmentGeneral,
+		}
 	}
 
 	return CellAlignmentStyle{
-		Horizontal:   alignment.Horizontal,
-		Vertical:     alignment.Vertical,
+		Horizontal:   normalizeHorizontalAlignment(alignment.Horizontal),
+		Vertical:     normalizeVerticalAlignment(alignment.Vertical),
 		WrapText:     alignment.WrapText,
 		TextRotation: alignment.TextRotation,
 	}
@@ -207,14 +367,106 @@ func alignmentStyleFromExcelStyle(alignment *excelize.Alignment) CellAlignmentSt
 func borderStylesFromExcelStyle(borders []excelize.Border) []CellBorderStyle {
 	cellBorders := make([]CellBorderStyle, 0, len(borders))
 	for _, border := range borders {
+		side, ok := normalizeBorderSide(border.Type)
+		if !ok {
+			continue
+		}
+
 		cellBorders = append(cellBorders, CellBorderStyle{
-			Side:  border.Type,
+			Side:  side,
 			Style: border.Style,
 			Color: cssColor(border.Color),
 		})
 	}
 
 	return cellBorders
+}
+
+func normalizeFontUnderlineStyle(value string) FontUnderlineStyle {
+	switch FontUnderlineStyle(strings.TrimSpace(value)) {
+	case FontUnderlineStyleNone:
+		return FontUnderlineStyleNone
+	case FontUnderlineStyleSingle:
+		return FontUnderlineStyleSingle
+	case FontUnderlineStyleDouble:
+		return FontUnderlineStyleDouble
+	default:
+		return FontUnderlineStyleNone
+	}
+}
+
+func normalizeFillType(value string) FillType {
+	switch FillType(strings.TrimSpace(value)) {
+	case FillTypeNone:
+		return FillTypeNone
+	case FillTypePattern:
+		return FillTypePattern
+	case FillTypeGradient:
+		return FillTypeGradient
+	default:
+		return FillTypeNone
+	}
+}
+
+func normalizeHorizontalAlignment(value string) HorizontalAlignment {
+	switch HorizontalAlignment(strings.TrimSpace(value)) {
+	case HorizontalAlignmentGeneral:
+		return HorizontalAlignmentGeneral
+	case HorizontalAlignmentLeft:
+		return HorizontalAlignmentLeft
+	case HorizontalAlignmentCenter:
+		return HorizontalAlignmentCenter
+	case HorizontalAlignmentRight:
+		return HorizontalAlignmentRight
+	case HorizontalAlignmentFill:
+		return HorizontalAlignmentFill
+	case HorizontalAlignmentJustify:
+		return HorizontalAlignmentJustify
+	case HorizontalAlignmentCenterContinuous:
+		return HorizontalAlignmentCenterContinuous
+	case HorizontalAlignmentDistributed:
+		return HorizontalAlignmentDistributed
+	default:
+		return HorizontalAlignmentGeneral
+	}
+}
+
+func normalizeVerticalAlignment(value string) VerticalAlignment {
+	switch VerticalAlignment(strings.TrimSpace(value)) {
+	case VerticalAlignmentGeneral:
+		return VerticalAlignmentGeneral
+	case VerticalAlignmentTop:
+		return VerticalAlignmentTop
+	case VerticalAlignmentCenter:
+		return VerticalAlignmentCenter
+	case VerticalAlignmentBottom:
+		return VerticalAlignmentBottom
+	case VerticalAlignmentJustify:
+		return VerticalAlignmentJustify
+	case VerticalAlignmentDistributed:
+		return VerticalAlignmentDistributed
+	default:
+		return VerticalAlignmentGeneral
+	}
+}
+
+func normalizeBorderSide(value string) (BorderSide, bool) {
+	switch BorderSide(strings.TrimSpace(value)) {
+	case BorderSideLeft:
+		return BorderSideLeft, true
+	case BorderSideRight:
+		return BorderSideRight, true
+	case BorderSideTop:
+		return BorderSideTop, true
+	case BorderSideBottom:
+		return BorderSideBottom, true
+	case BorderSideDiagonalUp:
+		return BorderSideDiagonalUp, true
+	case BorderSideDiagonalDown:
+		return BorderSideDiagonalDown, true
+	default:
+		return "", false
+	}
 }
 
 func cssColor(color string) string {

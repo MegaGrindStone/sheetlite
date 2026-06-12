@@ -2,11 +2,29 @@ package main
 
 import "slices"
 
-const (
-	statusKindReady   = "ready"
-	statusKindLoading = "loading"
-	statusKindError   = "error"
+// AppStatusKind describes the kind of user-facing backend status.
+type AppStatusKind string
 
+const (
+	// AppStatusKindReady indicates the app is idle and usable.
+	AppStatusKindReady AppStatusKind = "ready"
+	// AppStatusKindLoading indicates the app is doing busy workbook work.
+	AppStatusKindLoading AppStatusKind = "loading"
+	// AppStatusKindError indicates the latest backend action failed.
+	AppStatusKindError AppStatusKind = "error"
+)
+
+// AllAppStatusKinds lists AppStatusKind values for Wails enum binding.
+var AllAppStatusKinds = []struct {
+	Value  AppStatusKind
+	TSName string
+}{
+	{AppStatusKindReady, "Ready"},
+	{AppStatusKindLoading, "Loading"},
+	{AppStatusKindError, "Error"},
+}
+
+const (
 	defaultStatusMessage        = "Ready"
 	unsavedChangesStatusMessage = "Unsaved changes"
 	savingWorkbookMessage       = "Saving workbook..."
@@ -14,7 +32,6 @@ const (
 	defaultWorkbookTitle        = "Untitled"
 	defaultSheetName            = "Sheet 1"
 	defaultSheetIndex           = 0
-	sheetStateVisible           = "visible"
 
 	minExcelRow    = 1
 	maxExcelRow    = 1048576
@@ -39,9 +56,9 @@ type AppState struct {
 
 // AppStatus describes current user-facing backend status.
 type AppStatus struct {
-	Kind    string `json:"kind"`
-	Message string `json:"message"`
-	Busy    bool   `json:"busy"`
+	Kind    AppStatusKind `json:"kind"`
+	Message string        `json:"message"`
+	Busy    bool          `json:"busy"`
 }
 
 // WorkbookState describes the loaded workbook and its sheets.
@@ -71,15 +88,15 @@ type ScrollPosition struct {
 
 // CellData describes one loaded worksheet cell.
 type CellData struct {
-	Ref        string `json:"ref"`
-	Row        int    `json:"row"`
-	Column     int    `json:"column"`
-	Value      string `json:"value"`
-	RawValue   string `json:"rawValue"`
-	Formula    string `json:"formula"`
-	HasFormula bool   `json:"hasFormula"`
-	Kind       string `json:"kind"`
-	StyleID    int    `json:"styleId"`
+	Ref        string   `json:"ref"`
+	Row        int      `json:"row"`
+	Column     int      `json:"column"`
+	Value      string   `json:"value"`
+	RawValue   string   `json:"rawValue"`
+	Formula    string   `json:"formula"`
+	HasFormula bool     `json:"hasFormula"`
+	Kind       CellKind `json:"kind"`
+	StyleID    int      `json:"styleId"`
 }
 
 // CellAddress describes one cell using an Excel reference and coordinates.
@@ -135,7 +152,7 @@ func initialAppState() AppState {
 				{
 					Index:              defaultSheetIndex,
 					Name:               defaultSheetName,
-					State:              sheetStateVisible,
+					State:              SheetStateVisible,
 					Visible:            true,
 					Bounds:             a1Range,
 					DefaultColumnWidth: defaultColumnWidth,
@@ -158,7 +175,7 @@ func initialAppState() AppState {
 				LeftColumn: minExcelColumn,
 			},
 		},
-		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Status:     AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false},
 		Appearance: defaultAppearanceState(),
 	}
 }

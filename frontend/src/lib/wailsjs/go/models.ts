@@ -1,9 +1,74 @@
 export namespace main {
 	
+	export enum AppStatusKind {
+	    Error = "error",
+	    Loading = "loading",
+	    Ready = "ready",
+	}
+	export enum AppearanceMode {
+	    Dark = "dark",
+	    Light = "light",
+	    System = "system",
+	}
+	export enum AppearanceTheme {
+	    Dark = "dark",
+	    Light = "light",
+	}
+	export enum BorderSide {
+	    Bottom = "bottom",
+	    DiagonalDown = "diagonalDown",
+	    DiagonalUp = "diagonalUp",
+	    Left = "left",
+	    Right = "right",
+	    Top = "top",
+	}
+	export enum CellKind {
+	    Bool = "bool",
+	    Date = "date",
+	    Error = "error",
+	    Formula = "formula",
+	    InlineString = "inlineString",
+	    Number = "number",
+	    String = "string",
+	    Unset = "unset",
+	}
+	export enum FillType {
+	    Gradient = "gradient",
+	    None = "none",
+	    Pattern = "pattern",
+	}
+	export enum FontUnderlineStyle {
+	    Double = "double",
+	    None = "none",
+	    Single = "single",
+	}
+	export enum HorizontalAlignment {
+	    Center = "center",
+	    CenterContinuous = "centerContinuous",
+	    Distributed = "distributed",
+	    Fill = "fill",
+	    General = "general",
+	    Justify = "justify",
+	    Left = "left",
+	    Right = "right",
+	}
+	export enum SheetState {
+	    Hidden = "hidden",
+	    VeryHidden = "veryHidden",
+	    Visible = "visible",
+	}
+	export enum VerticalAlignment {
+	    Bottom = "bottom",
+	    Center = "center",
+	    Distributed = "distributed",
+	    General = "general",
+	    Justify = "justify",
+	    Top = "top",
+	}
 	export class AppearanceState {
-	    mode: string;
-	    systemTheme: string;
-	    effectiveTheme: string;
+	    mode: AppearanceMode;
+	    systemTheme: AppearanceTheme;
+	    effectiveTheme: AppearanceTheme;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppearanceState(source);
@@ -17,7 +82,7 @@ export namespace main {
 	    }
 	}
 	export class AppStatus {
-	    kind: string;
+	    kind: AppStatusKind;
 	    message: string;
 	    busy: boolean;
 	
@@ -99,7 +164,7 @@ export namespace main {
 	    }
 	}
 	export class CellBorderStyle {
-	    side: string;
+	    side: BorderSide;
 	    style: number;
 	    color: string;
 	
@@ -115,8 +180,8 @@ export namespace main {
 	    }
 	}
 	export class CellAlignmentStyle {
-	    horizontal: string;
-	    vertical: string;
+	    horizontal: HorizontalAlignment;
+	    vertical: VerticalAlignment;
 	    wrapText: boolean;
 	    textRotation: number;
 	
@@ -133,7 +198,7 @@ export namespace main {
 	    }
 	}
 	export class CellFillStyle {
-	    type: string;
+	    type: FillType;
 	    pattern: number;
 	    color: string;
 	    colors: string[];
@@ -155,7 +220,7 @@ export namespace main {
 	    size: number;
 	    bold: boolean;
 	    italic: boolean;
-	    underline: string;
+	    underline: FontUnderlineStyle;
 	    strikethrough: boolean;
 	    color: string;
 	
@@ -298,7 +363,7 @@ export namespace main {
 	    rawValue: string;
 	    formula: string;
 	    hasFormula: boolean;
-	    kind: string;
+	    kind: CellKind;
 	    styleId: number;
 	
 	    static createFrom(source: any = {}) {
@@ -371,7 +436,7 @@ export namespace main {
 	export class WorkbookSheet {
 	    index: number;
 	    name: string;
-	    state: string;
+	    state: SheetState;
 	    visible: boolean;
 	    bounds: CellRange;
 	    defaultColumnWidth: number;

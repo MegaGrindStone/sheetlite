@@ -33,7 +33,7 @@ func (a *App) OpenWorkbook() AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "file dialog is not available yet", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "file dialog is not available yet", Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -49,7 +49,7 @@ func (a *App) OpenWorkbook() AppState {
 		defer a.mu.Unlock()
 
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("could not open file dialog: %v", err),
 			Busy:    false,
 		}
@@ -67,7 +67,7 @@ func (a *App) OpenWorkbook() AppState {
 // OpenWorkbookPath opens one .xlsx workbook from a filesystem path.
 func (a *App) OpenWorkbookPath(path string) AppState {
 	a.mu.Lock()
-	a.state.Status = AppStatus{Kind: statusKindLoading, Message: loadingWorkbookMessage, Busy: true}
+	a.state.Status = AppStatus{Kind: AppStatusKindLoading, Message: loadingWorkbookMessage, Busy: true}
 	a.mu.Unlock()
 
 	// Workbook I/O can be slow, so don't block state reads while loading.
@@ -76,7 +76,7 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: err.Error(), Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: err.Error(), Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -93,7 +93,7 @@ func (a *App) OpenWorkbookPath(path string) AppState {
 	a.state = AppState{
 		Workbook:   workbook,
 		View:       view,
-		Status:     AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false},
+		Status:     AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false},
 		Appearance: appearance,
 	}
 	a.pendingCellEdits = map[string]map[string]string{}
@@ -111,7 +111,7 @@ func (a *App) OpenDroppedFiles(paths []string) AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "drop one .xlsx workbook to open", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "drop one .xlsx workbook to open", Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -121,7 +121,7 @@ func (a *App) OpenDroppedFiles(paths []string) AppState {
 		defer a.mu.Unlock()
 
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: "only one .xlsx workbook can be opened at a time",
 			Busy:    false,
 		}
@@ -237,7 +237,7 @@ func (a *App) SaveWorkbook() AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: savedStatusMessage, Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -256,7 +256,7 @@ func (a *App) SaveWorkbookAs() AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "save dialog is not available yet", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "save dialog is not available yet", Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -267,7 +267,7 @@ func (a *App) SaveWorkbookAs() AppState {
 		defer a.mu.Unlock()
 
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("could not open save dialog: %v", err),
 			Busy:    false,
 		}
@@ -288,7 +288,7 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: err.Error(), Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: err.Error(), Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -304,7 +304,7 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 		pendingEdits[sheetName] = maps.Clone(sheetEdits)
 	}
 	layoutEdits := a.pendingLayoutEdits.clone()
-	a.state.Status = AppStatus{Kind: statusKindLoading, Message: savingWorkbookMessage, Busy: true}
+	a.state.Status = AppStatus{Kind: AppStatusKindLoading, Message: savingWorkbookMessage, Busy: true}
 	a.mu.Unlock()
 
 	savedPath, err := saveWorkbookFile(workbook, pendingEdits, layoutEdits, targetPath)
@@ -313,7 +313,7 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 		defer a.mu.Unlock()
 
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("could not save workbook: %v", err),
 			Busy:    false,
 		}
@@ -335,7 +335,7 @@ func (a *App) saveWorkbookToPath(path string, updateIdentity bool) AppState {
 		ColumnWidths: map[string]map[int]float64{},
 		RowHeights:   map[string]map[int]float64{},
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: savedStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }

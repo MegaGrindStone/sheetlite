@@ -124,7 +124,7 @@ func TestViewCommandsUpdateState(t *testing.T) {
 	app := NewApp()
 
 	activeSheet := app.SetActiveSheet(defaultSheetName)
-	if activeSheet.View.ActiveSheetName != defaultSheetName || activeSheet.Status.Kind != statusKindReady {
+	if activeSheet.View.ActiveSheetName != defaultSheetName || activeSheet.Status.Kind != AppStatusKindReady {
 		t.Fatalf("expected active Sheet 1 and ready status, got %#v", activeSheet)
 	}
 
@@ -161,7 +161,7 @@ func TestInvalidViewCommandsSetErrorAndKeepView(t *testing.T) {
 
 	beforeCell := app.State()
 	invalidCell := app.SelectCell("XFE1")
-	if invalidCell.Status.Kind != statusKindError {
+	if invalidCell.Status.Kind != AppStatusKindError {
 		t.Fatalf("expected invalid cell to set error status, got %#v", invalidCell.Status)
 	}
 	if invalidCell.View != beforeCell.View {
@@ -170,7 +170,7 @@ func TestInvalidViewCommandsSetErrorAndKeepView(t *testing.T) {
 
 	beforeSheet := app.State()
 	invalidSheet := app.SetActiveSheet("Missing")
-	if invalidSheet.Status.Kind != statusKindError {
+	if invalidSheet.Status.Kind != AppStatusKindError {
 		t.Fatalf("expected invalid sheet to set error status, got %#v", invalidSheet.Status)
 	}
 	if invalidSheet.View != beforeSheet.View {
@@ -179,7 +179,7 @@ func TestInvalidViewCommandsSetErrorAndKeepView(t *testing.T) {
 
 	beforeScroll := app.State()
 	invalidScroll := app.SetScrollPosition(0, 1)
-	if invalidScroll.Status.Kind != statusKindError {
+	if invalidScroll.Status.Kind != AppStatusKindError {
 		t.Fatalf("expected invalid scroll to set error status, got %#v", invalidScroll.Status)
 	}
 	if invalidScroll.View != beforeScroll.View {
@@ -211,7 +211,7 @@ func TestSetSheetCellValueInsertsSortedAndExpandsBounds(t *testing.T) {
 		Name:   defaultSheetName,
 		Bounds: a1Range(),
 		Cells: []CellData{
-			{Ref: "A1", Row: 1, Column: 1, Value: "start", RawValue: "start", Kind: "string"},
+			{Ref: "A1", Row: 1, Column: 1, Value: "start", RawValue: "start", Kind: CellKindString},
 		},
 	}
 
@@ -240,7 +240,7 @@ func TestSetSheetCellValueInsertsSortedAndExpandsBounds(t *testing.T) {
 	cell := findCell(t, sheet, "B2")
 	if cell.Value != "middle" ||
 		cell.RawValue != "middle" ||
-		cell.Kind != "string" ||
+		cell.Kind != CellKindString ||
 		cell.HasFormula ||
 		cell.Formula != "" {
 		t.Fatalf("expected literal B2 cell, got %#v", cell)
@@ -274,7 +274,7 @@ func TestSetSheetCellValuePreservesStyleAndClearsFormula(t *testing.T) {
 	}
 
 	cell := findCell(t, sheet, "A1")
-	if cell.Value != "=literal" || cell.RawValue != "=literal" || cell.Kind != "string" {
+	if cell.Value != "=literal" || cell.RawValue != "=literal" || cell.Kind != CellKindString {
 		t.Fatalf("expected literal string value, got %#v", cell)
 	}
 	if cell.HasFormula || cell.Formula != "" {
@@ -292,8 +292,8 @@ func TestSetSheetCellValueClearSemantics(t *testing.T) {
 		Name:   defaultSheetName,
 		Bounds: mustCellRange(t, 1, 1, 2, 2),
 		Cells: []CellData{
-			{Ref: "A1", Row: 1, Column: 1, Value: "plain", RawValue: "plain", Kind: "string"},
-			{Ref: "B2", Row: 2, Column: 2, Value: "styled", RawValue: "styled", Kind: "string", StyleID: 4},
+			{Ref: "A1", Row: 1, Column: 1, Value: "plain", RawValue: "plain", Kind: CellKindString},
+			{Ref: "B2", Row: 2, Column: 2, Value: "styled", RawValue: "styled", Kind: CellKindString, StyleID: 4},
 		},
 	}
 
@@ -316,7 +316,7 @@ func TestSetSheetCellValueClearSemantics(t *testing.T) {
 	if cell.StyleID != 4 ||
 		cell.Value != "" ||
 		cell.RawValue != "" ||
-		cell.Kind != "" ||
+		cell.Kind != CellKindUnset ||
 		cell.HasFormula ||
 		cell.Formula != "" {
 		t.Fatalf("expected style-only B2 after clear, got %#v", cell)
@@ -531,7 +531,7 @@ func TestSetCellValueEditsNeutralWorkbook(t *testing.T) {
 	if !state.Workbook.Dirty {
 		t.Fatalf("expected neutral workbook edit to mark dirty, got %#v", state.Workbook)
 	}
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: unsavedChangesStatusMessage, Busy: false}) {
 		t.Fatalf("expected unsaved ready status, got %#v", state.Status)
 	}
 
@@ -539,7 +539,7 @@ func TestSetCellValueEditsNeutralWorkbook(t *testing.T) {
 	cell := findCell(t, sheet, "B2")
 	if cell.Value != "hello" ||
 		cell.RawValue != "hello" ||
-		cell.Kind != "string" ||
+		cell.Kind != CellKindString ||
 		cell.HasFormula ||
 		cell.Formula != "" {
 		t.Fatalf("expected literal B2 cell, got %#v", cell)
@@ -564,7 +564,8 @@ func TestSetCellValueKeepsLiteralStrings(t *testing.T) {
 	for i, value := range values {
 		ref := fmt.Sprintf("A%d", i+1)
 		cell := findCell(t, sheet, ref)
-		if cell.Value != value || cell.RawValue != value || cell.Kind != "string" || cell.HasFormula || cell.Formula != "" {
+		if cell.Value != value || cell.RawValue != value ||
+			cell.Kind != CellKindString || cell.HasFormula || cell.Formula != "" {
 			t.Fatalf("expected %s to remain literal %q, got %#v", ref, value, cell)
 		}
 		assertPendingEdit(t, app, defaultSheetName, ref, value)
@@ -576,7 +577,7 @@ func TestSetCellValueNoOpDoesNotDirtyCleanWorkbook(t *testing.T) {
 
 	app := NewApp()
 	app.state.Workbook.Sheets[0].Cells = []CellData{
-		{Ref: "A1", Row: 1, Column: 1, Value: "same", RawValue: "same", Kind: "string"},
+		{Ref: "A1", Row: 1, Column: 1, Value: "same", RawValue: "same", Kind: CellKindString},
 	}
 
 	state := app.SetCellValue(defaultSheetName, "A1", "same")
@@ -586,7 +587,7 @@ func TestSetCellValueNoOpDoesNotDirtyCleanWorkbook(t *testing.T) {
 	if len(app.pendingCellEdits) != 0 {
 		t.Fatalf("expected no pending edits for no-op, got %#v", app.pendingCellEdits)
 	}
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}) {
 		t.Fatalf("expected default ready status for no-op, got %#v", state.Status)
 	}
 }
@@ -606,7 +607,7 @@ func TestSetCellValueLoadedWorkbookPreservesMetadataAndOverwritesFormula(t *test
 	}
 	dataSheet = findSheet(t, state.Workbook, fixtureDataSheet)
 	edited := findCell(t, dataSheet, "B2")
-	if edited.Value != "Budget" || edited.RawValue != "Budget" || edited.Kind != "string" {
+	if edited.Value != "Budget" || edited.RawValue != "Budget" || edited.Kind != CellKindString {
 		t.Fatalf("expected B2 literal edit, got %#v", edited)
 	}
 	if edited.StyleID != originalStyleID {
@@ -619,7 +620,7 @@ func TestSetCellValueLoadedWorkbookPreservesMetadataAndOverwritesFormula(t *test
 	state = app.SetCellValue(fixtureDataSheet, "C2", "=A1+B1")
 	dataSheet = findSheet(t, state.Workbook, fixtureDataSheet)
 	formula := findCell(t, dataSheet, "C2")
-	if formula.Value != "=A1+B1" || formula.RawValue != "=A1+B1" || formula.Kind != "string" {
+	if formula.Value != "=A1+B1" || formula.RawValue != "=A1+B1" || formula.Kind != CellKindString {
 		t.Fatalf("expected C2 literal formula-looking text, got %#v", formula)
 	}
 	if formula.HasFormula || formula.Formula != "" {
@@ -634,8 +635,8 @@ func TestSetCellValueClearBehavior(t *testing.T) {
 	app := NewApp()
 	app.state.Workbook.Sheets[0].Bounds = mustCellRange(t, 1, 1, 2, 2)
 	app.state.Workbook.Sheets[0].Cells = []CellData{
-		{Ref: "A1", Row: 1, Column: 1, Value: "plain", RawValue: "plain", Kind: "string"},
-		{Ref: "B2", Row: 2, Column: 2, Value: "styled", RawValue: "styled", Kind: "string", StyleID: 12},
+		{Ref: "A1", Row: 1, Column: 1, Value: "plain", RawValue: "plain", Kind: CellKindString},
+		{Ref: "B2", Row: 2, Column: 2, Value: "styled", RawValue: "styled", Kind: CellKindString, StyleID: 12},
 	}
 
 	state := app.SetCellValue(defaultSheetName, "A1", "")
@@ -654,7 +655,7 @@ func TestSetCellValueClearBehavior(t *testing.T) {
 	if cell.StyleID != 12 ||
 		cell.Value != "" ||
 		cell.RawValue != "" ||
-		cell.Kind != "" ||
+		cell.Kind != CellKindUnset ||
 		cell.HasFormula ||
 		cell.Formula != "" {
 		t.Fatalf("expected style-only B2 after clear, got %#v", cell)
@@ -683,7 +684,7 @@ func TestSetCellValueRejectsInvalidInputAndPreservesState(t *testing.T) {
 			app := NewApp()
 			before := app.State()
 			state := app.SetCellValue(tt.sheetName, tt.cellRef, "value")
-			if state.Status.Kind != statusKindError || state.Status.Busy {
+			if state.Status.Kind != AppStatusKindError || state.Status.Busy {
 				t.Fatalf("expected error status without busy flag, got %#v", state.Status)
 			}
 			if !strings.Contains(state.Status.Message, tt.wantMessage) {
@@ -731,7 +732,7 @@ func TestResizeCommandsCreateLayoutsAndRecordPendingEdits(t *testing.T) {
 	if !state.Workbook.Dirty {
 		t.Fatalf("expected column resize to mark workbook dirty")
 	}
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: unsavedChangesStatusMessage, Busy: false}) {
 		t.Fatalf("expected unsaved ready status, got %#v", state.Status)
 	}
 	sheet := findSheet(t, state.Workbook, defaultSheetName)
@@ -805,7 +806,7 @@ func TestResizeCommandsNoOpDoesNotDirtyCleanWorkbook(t *testing.T) {
 	if state.Workbook.Dirty {
 		t.Fatalf("expected row no-op to keep workbook clean, got %#v", state.Workbook)
 	}
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}) {
 		t.Fatalf("expected default ready status for no-op, got %#v", state.Status)
 	}
 	assertNoPendingLayoutEdits(t, app)
@@ -879,7 +880,7 @@ func TestResizeCommandsRejectInvalidInputAndPreserveState(t *testing.T) {
 			app.SetRowHeight(defaultSheetName, 3, 28.5)
 			before := app.State()
 			state := tt.resize(app)
-			if state.Status.Kind != statusKindError || state.Status.Busy {
+			if state.Status.Kind != AppStatusKindError || state.Status.Busy {
 				t.Fatalf("expected error status without busy flag, got %#v", state.Status)
 			}
 			if !strings.Contains(state.Status.Message, tt.wantMessage) {
@@ -1010,7 +1011,7 @@ func assertNeutralAppState(t *testing.T, state AppState) {
 	expectedSheet := WorkbookSheet{
 		Index:              defaultSheetIndex,
 		Name:               defaultSheetName,
-		State:              sheetStateVisible,
+		State:              SheetStateVisible,
 		Visible:            true,
 		Bounds:             a1Range(),
 		DefaultColumnWidth: defaultColumnWidth,
@@ -1045,7 +1046,7 @@ func assertNeutralAppState(t *testing.T, state AppState) {
 		t.Fatalf("expected neutral view, got %#v", state.View)
 	}
 
-	expectedStatus := AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	expectedStatus := AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 	if state.Status != expectedStatus {
 		t.Fatalf("expected ready neutral status, got %#v", state.Status)
 	}

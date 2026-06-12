@@ -28,6 +28,18 @@ func main() {
 		DragAndDrop:      &options.DragAndDrop{EnableFileDrop: true},
 		OnStartup:        app.startup,
 		OnBeforeClose:    app.beforeClose,
+		EnumBind: []any{
+			AllAppearanceModes,
+			AllAppearanceThemes,
+			AllAppStatusKinds,
+			AllCellKinds,
+			AllSheetStates,
+			AllFontUnderlineStyles,
+			AllFillTypes,
+			AllHorizontalAlignments,
+			AllVerticalAlignments,
+			AllBorderSides,
+		},
 		Bind: []any{
 			app,
 		},

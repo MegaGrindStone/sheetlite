@@ -8,17 +8,44 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-const (
-	styleOnlyCellScanLimit = 100_000
+const styleOnlyCellScanLimit = 100_000
 
-	cellKindBool         = "bool"
-	cellKindDate         = "date"
-	cellKindError        = "error"
-	cellKindFormula      = "formula"
-	cellKindInlineString = "inlineString"
-	cellKindNumber       = "number"
-	cellKindString       = "string"
+// CellKind describes the semantic kind Excelize reports for a loaded cell.
+type CellKind string
+
+const (
+	// CellKindUnset marks cells with no concrete Excel cell kind, such as styled blanks.
+	CellKindUnset CellKind = "unset"
+	// CellKindBool marks boolean cells.
+	CellKindBool CellKind = "bool"
+	// CellKindDate marks date cells.
+	CellKindDate CellKind = "date"
+	// CellKindError marks formula/error cells.
+	CellKindError CellKind = "error"
+	// CellKindFormula marks formula cells.
+	CellKindFormula CellKind = "formula"
+	// CellKindInlineString marks inline string cells.
+	CellKindInlineString CellKind = "inlineString"
+	// CellKindNumber marks numeric cells.
+	CellKindNumber CellKind = "number"
+	// CellKindString marks shared-string and literal edit cells.
+	CellKindString CellKind = "string"
 )
+
+// AllCellKinds lists CellKind values for Wails enum binding.
+var AllCellKinds = []struct {
+	Value  CellKind
+	TSName string
+}{
+	{CellKindUnset, "Unset"},
+	{CellKindBool, "Bool"},
+	{CellKindDate, "Date"},
+	{CellKindError, "Error"},
+	{CellKindFormula, "Formula"},
+	{CellKindInlineString, "InlineString"},
+	{CellKindNumber, "Number"},
+	{CellKindString, "String"},
+}
 
 func parseCellAddress(ref string) (CellAddress, bool) {
 	trimmed := strings.TrimSpace(ref)
@@ -180,9 +207,9 @@ func loadCell(
 	}
 
 	hasFormula := formula != ""
-	kind := cellKind(cellType, hasFormula)
+	kind, hasConcreteKind := cellKind(cellType, hasFormula)
 	// Preserve styled and formula cells even when their displayed value is empty.
-	include := value != "" || rawValue != "" || hasFormula || styleID != 0 || kind != ""
+	include := value != "" || rawValue != "" || hasFormula || styleID != 0 || hasConcreteKind
 	if !include {
 		return CellData{}, false, nil
 	}
@@ -302,30 +329,30 @@ func a1Range() CellRange {
 	return CellRange{Ref: address.Ref, Start: address, End: address}
 }
 
-func cellKind(cellType excelize.CellType, hasFormula bool) string {
+func cellKind(cellType excelize.CellType, hasFormula bool) (CellKind, bool) {
 	if hasFormula {
-		return cellKindFormula
+		return CellKindFormula, true
 	}
 
 	switch cellType {
 	case excelize.CellTypeBool:
-		return cellKindBool
+		return CellKindBool, true
 	case excelize.CellTypeDate:
-		return cellKindDate
+		return CellKindDate, true
 	case excelize.CellTypeError:
-		return cellKindError
+		return CellKindError, true
 	case excelize.CellTypeFormula:
-		return cellKindFormula
+		return CellKindFormula, true
 	case excelize.CellTypeInlineString:
-		return cellKindInlineString
+		return CellKindInlineString, true
 	case excelize.CellTypeNumber:
-		return cellKindNumber
+		return CellKindNumber, true
 	case excelize.CellTypeSharedString:
-		return cellKindString
+		return CellKindString, true
 	case excelize.CellTypeUnset:
-		return ""
+		return CellKindUnset, false
 	default:
-		return ""
+		return CellKindUnset, false
 	}
 }
 

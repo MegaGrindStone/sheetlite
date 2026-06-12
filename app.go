@@ -88,7 +88,7 @@ func (a *App) InitializeAppearance(mode AppearanceMode, systemTheme AppearanceTh
 	for i := range a.state.Workbook.Styles {
 		a.state.Workbook.Styles[i].render(a.state.Appearance.EffectiveTheme)
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -100,7 +100,7 @@ func (a *App) SetAppearanceMode(mode AppearanceMode) AppState {
 
 	if !mode.valid() {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: "Appearance mode must be system, light, or dark.",
 			Busy:    false,
 		}
@@ -115,7 +115,7 @@ func (a *App) SetAppearanceMode(mode AppearanceMode) AppState {
 	for i := range a.state.Workbook.Styles {
 		a.state.Workbook.Styles[i].render(appearance.EffectiveTheme)
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -127,7 +127,7 @@ func (a *App) SetSystemTheme(theme AppearanceTheme) AppState {
 
 	if !theme.valid() {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: "System theme must be light or dark.",
 			Busy:    false,
 		}
@@ -142,7 +142,7 @@ func (a *App) SetSystemTheme(theme AppearanceTheme) AppState {
 	for i := range a.state.Workbook.Styles {
 		a.state.Workbook.Styles[i].render(appearance.EffectiveTheme)
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -155,7 +155,7 @@ func (a *App) SetActiveSheet(name string) AppState {
 	defer a.mu.Unlock()
 
 	if sheetName == "" {
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "Sheet name is required.", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "Sheet name is required.", Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -164,7 +164,7 @@ func (a *App) SetActiveSheet(name string) AppState {
 		return sheet.Name == sheetName
 	}) {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Sheet %q was not found.", sheetName),
 			Busy:    false,
 		}
@@ -173,7 +173,7 @@ func (a *App) SetActiveSheet(name string) AppState {
 	}
 
 	a.state.View.ActiveSheetName = sheetName
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -187,7 +187,7 @@ func (a *App) SelectCell(cellRef string) AppState {
 
 	if !ok {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Cell reference %q is invalid.", cellRef),
 			Busy:    false,
 		}
@@ -199,7 +199,7 @@ func (a *App) SelectCell(cellRef string) AppState {
 	// keeping selection separate for future multi-cell range expansion.
 	a.state.View.ActiveCell = address
 	a.state.View.Selection = CellRange{Ref: address.Ref, Start: address, End: address}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -218,14 +218,14 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 	}
 
 	if trimmedSheetName == "" {
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "Sheet name is required.", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "Sheet name is required.", Busy: false}
 
 		return cloneAppState(a.state)
 	}
 
 	if !validAddress {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Cell reference %q is invalid.", cellRef),
 			Busy:    false,
 		}
@@ -238,7 +238,7 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 	})
 	if sheetIndex < 0 {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Sheet %q was not found.", trimmedSheetName),
 			Busy:    false,
 		}
@@ -249,7 +249,7 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 	changed, err := a.state.Workbook.Sheets[sheetIndex].setCellValue(address, value)
 	if err != nil {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Could not edit %s on sheet %q: %v", address.Ref, trimmedSheetName, err),
 			Busy:    false,
 		}
@@ -267,7 +267,7 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 			a.pendingCellEdits[trimmedSheetName] = map[string]string{}
 		}
 		a.pendingCellEdits[trimmedSheetName][address.Ref] = value
-		a.state.Status = AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -276,7 +276,7 @@ func (a *App) SetCellValue(sheetName string, cellRef string, value string) AppSt
 	if a.state.Workbook.Dirty {
 		message = unsavedChangesStatusMessage
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: message, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: message, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -352,14 +352,14 @@ func (a *App) setLayoutDimension(
 	}
 
 	if trimmedSheetName == "" {
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "Sheet name is required.", Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindError, Message: "Sheet name is required.", Busy: false}
 
 		return cloneAppState(a.state)
 	}
 
 	if index < command.minIndex || index > command.maxIndex {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("%s must be between %d and %d.", command.indexName, command.minIndex, command.maxIndex),
 			Busy:    false,
 		}
@@ -369,7 +369,7 @@ func (a *App) setLayoutDimension(
 
 	if !validLayoutDimension(size) {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: command.sizeName + " must be a positive finite number.",
 			Busy:    false,
 		}
@@ -382,7 +382,7 @@ func (a *App) setLayoutDimension(
 	})
 	if sheetIndex < 0 {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Sheet %q was not found.", trimmedSheetName),
 			Busy:    false,
 		}
@@ -393,7 +393,7 @@ func (a *App) setLayoutDimension(
 	changed, err := command.mutate(&a.state.Workbook.Sheets[sheetIndex], index, size)
 	if err != nil {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Could not resize %s %d on sheet %q: %v", command.target, index, trimmedSheetName, err),
 			Busy:    false,
 		}
@@ -404,7 +404,7 @@ func (a *App) setLayoutDimension(
 	if changed {
 		a.state.Workbook.Dirty = true
 		command.record(a, trimmedSheetName, index, size)
-		a.state.Status = AppStatus{Kind: statusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
+		a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: unsavedChangesStatusMessage, Busy: false}
 
 		return cloneAppState(a.state)
 	}
@@ -413,7 +413,7 @@ func (a *App) setLayoutDimension(
 	if a.state.Workbook.Dirty {
 		message = unsavedChangesStatusMessage
 	}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: message, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: message, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -425,7 +425,7 @@ func (a *App) SetScrollPosition(topRow int, leftColumn int) AppState {
 
 	if topRow < minExcelRow || topRow > maxExcelRow {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Top row must be between %d and %d.", minExcelRow, maxExcelRow),
 			Busy:    false,
 		}
@@ -435,7 +435,7 @@ func (a *App) SetScrollPosition(topRow int, leftColumn int) AppState {
 
 	if leftColumn < minExcelColumn || leftColumn > maxExcelColumn {
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("Left column must be between %d and %d.", minExcelColumn, maxExcelColumn),
 			Busy:    false,
 		}
@@ -444,7 +444,7 @@ func (a *App) SetScrollPosition(topRow int, leftColumn int) AppState {
 	}
 
 	a.state.View.Scroll = ScrollPosition{TopRow: topRow, LeftColumn: leftColumn}
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -456,7 +456,7 @@ func (a *App) SetZoom(percent int) AppState {
 
 	// Match common spreadsheet zoom bounds instead of rejecting toolbar-style oversteps.
 	a.state.View.ZoomPercent = clampZoomPercent(percent)
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 
 	return cloneAppState(a.state)
 }
@@ -475,7 +475,11 @@ func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 
-		a.state.Status = AppStatus{Kind: statusKindError, Message: "unsaved-changes dialog is not available yet", Busy: false}
+		a.state.Status = AppStatus{
+			Kind:    AppStatusKindError,
+			Message: "unsaved-changes dialog is not available yet",
+			Busy:    false,
+		}
 
 		return false
 	}
@@ -493,7 +497,7 @@ func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
 		defer a.mu.Unlock()
 
 		a.state.Status = AppStatus{
-			Kind:    statusKindError,
+			Kind:    AppStatusKindError,
 			Message: fmt.Sprintf("could not show unsaved-changes dialog: %v", err),
 			Busy:    false,
 		}
@@ -505,7 +509,7 @@ func (a *App) guardDestructiveTransition(discardOnDontSave bool) bool {
 	case dirtyPromptSave:
 		state := a.SaveWorkbook()
 
-		return !state.Workbook.Dirty && state.Status.Kind != statusKindError
+		return !state.Workbook.Dirty && state.Status.Kind != AppStatusKindError
 	case dirtyPromptDontSave:
 		// Open/drop clear edits only after replacement succeeds; close has no later cleanup point.
 		if discardOnDontSave {
@@ -554,7 +558,7 @@ func (a *App) discardPendingEdits() {
 		RowHeights:   map[string]map[int]float64{},
 	}
 	a.state.Workbook.Dirty = false
-	a.state.Status = AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	a.state.Status = AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 }
 
 func (a *App) runOpenFileDialog(ctx context.Context, options runtime.OpenDialogOptions) (string, error) {

@@ -142,7 +142,7 @@ func assertAppearance(
 func assertAppearanceErrorPreservesState(t *testing.T, state AppState, before AppState, messagePart string) {
 	t.Helper()
 
-	if state.Status.Kind != statusKindError || state.Status.Busy {
+	if state.Status.Kind != AppStatusKindError || state.Status.Busy {
 		t.Fatalf("expected appearance command error status without busy flag, got %#v", state.Status)
 	}
 	if !strings.Contains(state.Status.Message, messagePart) {

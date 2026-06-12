@@ -119,13 +119,13 @@ func TestOpenWorkbookRejectionsPreservePreviousWorkbook(t *testing.T) {
 
 			app := NewApp()
 			loaded := app.OpenWorkbookPath(validPath)
-			if loaded.Status.Kind != statusKindReady {
+			if loaded.Status.Kind != AppStatusKindReady {
 				t.Fatalf("expected fixture to load before rejection case, got %#v", loaded.Status)
 			}
 
 			before := app.State()
 			result := tt.open(app)
-			if result.Status.Kind != statusKindError || result.Status.Busy {
+			if result.Status.Kind != AppStatusKindError || result.Status.Busy {
 				t.Fatalf("expected error status without busy flag, got %#v", result.Status)
 			}
 			if !strings.Contains(result.Status.Message, tt.wantMessage) {
@@ -148,7 +148,7 @@ func TestOpenWorkbookWithoutContextSetsError(t *testing.T) {
 	before := app.State()
 
 	state := app.OpenWorkbook()
-	if state.Status.Kind != statusKindError || state.Status.Busy {
+	if state.Status.Kind != AppStatusKindError || state.Status.Busy {
 		t.Fatalf("expected unavailable dialog to set error status, got %#v", state.Status)
 	}
 	if !strings.Contains(state.Status.Message, "file dialog is not available yet") {
@@ -162,7 +162,7 @@ func TestOpenWorkbookWithoutContextSetsError(t *testing.T) {
 func assertReadyStatus(t *testing.T, status AppStatus) {
 	t.Helper()
 
-	expected := AppStatus{Kind: statusKindReady, Message: defaultStatusMessage, Busy: false}
+	expected := AppStatus{Kind: AppStatusKindReady, Message: defaultStatusMessage, Busy: false}
 	if status != expected {
 		t.Fatalf("expected ready status after loading workbook, got %#v", status)
 	}
@@ -197,7 +197,7 @@ func assertLoadedSheetsAndView(t *testing.T, state AppState) WorkbookSheet {
 	}
 
 	dataSheet := findSheet(t, state.Workbook, fixtureDataSheet)
-	if dataSheet.Index != 0 || !dataSheet.Visible || dataSheet.State != sheetStateVisible {
+	if dataSheet.Index != 0 || !dataSheet.Visible || dataSheet.State != SheetStateVisible {
 		t.Fatalf("expected visible Data sheet at index 0, got %#v", dataSheet)
 	}
 	if dataSheet.Bounds.Ref != "A1:E5" {
@@ -224,7 +224,7 @@ func assertLoadedCells(t *testing.T, dataSheet WorkbookSheet) int {
 	}
 
 	formula := findCell(t, dataSheet, "C2")
-	if !formula.HasFormula || formula.Formula != "SUM(B2,7.5)" || formula.Kind != "formula" {
+	if !formula.HasFormula || formula.Formula != "SUM(B2,7.5)" || formula.Kind != CellKindFormula {
 		t.Fatalf("expected C2 formula metadata, got %#v", formula)
 	}
 
@@ -423,7 +423,7 @@ func findStyle(t *testing.T, styles []CellStyle, id int) CellStyle {
 	return CellStyle{}
 }
 
-func findBorder(t *testing.T, style CellStyle, side string) CellBorderStyle {
+func findBorder(t *testing.T, style CellStyle, side BorderSide) CellBorderStyle {
 	t.Helper()
 
 	for _, border := range style.Borders {
@@ -615,7 +615,7 @@ func TestSaveWorkbookAsUntitledCreatesXLSXAndClearsDirty(t *testing.T) {
 		t.Fatalf("expected successful Save As to clear pending edits, got %#v", app.pendingCellEdits)
 	}
 	assertNoPendingLayoutEdits(t, app)
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: savedStatusMessage, Busy: false}) {
 		t.Fatalf("expected saved status, got %#v", state.Status)
 	}
 	if gotOptions.DefaultFilename != defaultWorkbookTitle+workbookFileExtension {
@@ -662,7 +662,7 @@ func TestSaveWorkbookInPlacePreservesContentAndClearsDirty(t *testing.T) {
 		t.Fatalf("expected in-place save to clear pending edits, got %#v", app.pendingCellEdits)
 	}
 	assertNoPendingLayoutEdits(t, app)
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: savedStatusMessage, Busy: false}) {
 		t.Fatalf("expected saved status, got %#v", state.Status)
 	}
 
@@ -685,7 +685,7 @@ func TestSaveWorkbookWhenCleanReportsSavedWithoutChangingState(t *testing.T) {
 	before := app.State()
 
 	state := app.SaveWorkbook()
-	if state.Status != (AppStatus{Kind: statusKindReady, Message: savedStatusMessage, Busy: false}) {
+	if state.Status != (AppStatus{Kind: AppStatusKindReady, Message: savedStatusMessage, Busy: false}) {
 		t.Fatalf("expected saved ready status, got %#v", state.Status)
 	}
 	before.Status = state.Status
@@ -707,7 +707,7 @@ func TestSaveWorkbookFailurePreservesDirtyStateAndPendingEdits(t *testing.T) {
 	must(t, os.Remove(path))
 
 	state := app.SaveWorkbook()
-	if state.Status.Kind != statusKindError || state.Status.Busy {
+	if state.Status.Kind != AppStatusKindError || state.Status.Busy {
 		t.Fatalf("expected save error status without busy flag, got %#v", state.Status)
 	}
 	if !strings.Contains(state.Status.Message, "could not save workbook") {
@@ -751,7 +751,7 @@ func TestSaveWorkbookAsDialogErrorPreservesDirtyState(t *testing.T) {
 	before := app.State()
 
 	state := app.SaveWorkbookAs()
-	if state.Status.Kind != statusKindError || !strings.Contains(state.Status.Message, "could not open save dialog") {
+	if state.Status.Kind != AppStatusKindError || !strings.Contains(state.Status.Message, "could not open save dialog") {
 		t.Fatalf("expected dialog error status, got %#v", state.Status)
 	}
 	before.Status = state.Status
@@ -841,7 +841,7 @@ func TestOpenDroppedFilesDirtyPromptSaveFailureCancelsReplacement(t *testing.T) 
 	}
 
 	state := app.OpenDroppedFiles([]string{nextPath})
-	if state.Status.Kind != statusKindError || !strings.Contains(state.Status.Message, "could not save workbook") {
+	if state.Status.Kind != AppStatusKindError || !strings.Contains(state.Status.Message, "could not save workbook") {
 		t.Fatalf("expected save failure status, got %#v", state.Status)
 	}
 	before.Status = state.Status

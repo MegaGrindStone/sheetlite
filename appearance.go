@@ -12,6 +12,16 @@ const (
 	AppearanceModeDark AppearanceMode = "dark"
 )
 
+// AllAppearanceModes lists AppearanceMode values for Wails enum binding.
+var AllAppearanceModes = []struct {
+	Value  AppearanceMode
+	TSName string
+}{
+	{AppearanceModeSystem, "System"},
+	{AppearanceModeLight, "Light"},
+	{AppearanceModeDark, "Dark"},
+}
+
 // AppearanceTheme describes a resolved light or dark theme.
 type AppearanceTheme string
 
@@ -21,6 +31,15 @@ const (
 	// AppearanceThemeDark is the dark effective theme.
 	AppearanceThemeDark AppearanceTheme = "dark"
 )
+
+// AllAppearanceThemes lists AppearanceTheme values for Wails enum binding.
+var AllAppearanceThemes = []struct {
+	Value  AppearanceTheme
+	TSName string
+}{
+	{AppearanceThemeLight, "Light"},
+	{AppearanceThemeDark, "Dark"},
+}
 
 // AppearanceState describes backend-owned runtime appearance state.
 type AppearanceState struct {
