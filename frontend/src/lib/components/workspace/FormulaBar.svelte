@@ -2,6 +2,14 @@
 	import type { main } from '$lib/wailsjs/go/models';
 	import type { CellEditSession, CellEditSource } from './cellEditSession';
 
+	type CellEditCommitCallback = (
+		sheetName: string,
+		cellRef: string,
+		value: string
+	) => Promise<boolean | void> | boolean | void;
+
+	type ReturnFocusCallback = () => Promise<void> | void;
+
 	type Props = {
 		view?: main.WorkbookViewState;
 		activeCell?: main.CellData;
@@ -20,7 +28,8 @@
 			value: string
 		) => void;
 		onCancelCellEdit?: (sheetName?: string, cellRef?: string) => void;
-		onCommitCellEdit?: (sheetName: string, cellRef: string, value: string) => Promise<void> | void;
+		onCommitCellEdit?: CellEditCommitCallback;
+		onReturnFocusToCell?: ReturnFocusCallback;
 	};
 
 	let {
@@ -31,7 +40,8 @@
 		onBeginCellEdit,
 		onUpdateCellEdit,
 		onCancelCellEdit,
-		onCommitCellEdit
+		onCommitCellEdit,
+		onReturnFocusToCell
 	}: Props = $props();
 	let skipNextBlurCommit = false;
 
@@ -78,24 +88,30 @@
 		onCancelCellEdit?.(activeSheetName, activeCellRef);
 	}
 
-	async function commitEdit(): Promise<void> {
+	async function commitEdit(): Promise<boolean> {
 		if (editCommitting || !activeEditSession) {
-			return;
+			return false;
 		}
 
 		if (!onCommitCellEdit || !activeSheetName || !activeCellRef) {
 			onCancelCellEdit?.(activeSheetName, activeCellRef);
-			return;
+			return false;
 		}
 
 		const nextValue = activeEditSession.value;
 
 		if (nextValue === formulaText) {
 			onCancelCellEdit?.(activeSheetName, activeCellRef);
-			return;
+			return true;
 		}
 
-		await onCommitCellEdit(activeSheetName, activeCellRef, nextValue);
+		try {
+			const commitResult = await onCommitCellEdit(activeSheetName, activeCellRef, nextValue);
+			return commitResult !== false;
+		} catch (error) {
+			console.warn('Formula bar edit commit failed.', error);
+			return false;
+		}
 	}
 
 	function handleFormulaInput(event: Event): void {
@@ -107,26 +123,34 @@
 		);
 	}
 
-	async function commitEditAndBlur(input: HTMLInputElement): Promise<void> {
+	async function commitEditAndReturnFocus(input: HTMLInputElement): Promise<void> {
 		skipNextBlurCommit = true;
-		try {
-			await commitEdit();
-		} finally {
-			input.blur();
+		const committed = await commitEdit();
+		if (!committed) {
+			skipNextBlurCommit = false;
+			return;
 		}
+
+		input.blur();
+		await onReturnFocusToCell?.();
+	}
+
+	async function cancelEditAndReturnFocus(input: HTMLInputElement): Promise<void> {
+		cancelEdit();
+		input.blur();
+		await onReturnFocusToCell?.();
 	}
 
 	function handleFormulaKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Enter') {
 			event.preventDefault();
-			void commitEditAndBlur(event.currentTarget as HTMLInputElement);
+			void commitEditAndReturnFocus(event.currentTarget as HTMLInputElement);
 			return;
 		}
 
 		if (event.key === 'Escape') {
 			event.preventDefault();
-			cancelEdit();
-			(event.currentTarget as HTMLInputElement).blur();
+			void cancelEditAndReturnFocus(event.currentTarget as HTMLInputElement);
 		}
 	}
 

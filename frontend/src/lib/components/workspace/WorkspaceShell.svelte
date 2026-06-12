@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import {
 		applyAppearanceAttributes,
@@ -42,6 +42,7 @@
 	let cellEditCommitting = $state(false);
 	let isMounted = false;
 	let dragDepth = 0;
+	let saveShortcutInProgress = false;
 
 	const workbook = $derived(appState?.workbook);
 	const view = $derived(appState?.view);
@@ -94,8 +95,19 @@
 		return updateSnapshot(() => SelectCell(cellRef));
 	}
 
-	function setCellValue(sheetName: string, cellRef: string, value: string): Promise<void> {
-		return updateSnapshot(() => SetCellValue(sheetName, cellRef, value));
+	async function focusActiveGridCell(): Promise<void> {
+		await tick();
+		document
+			.querySelector<HTMLElement>('.spreadsheet-viewport .grid-cell.active-cell')
+			?.focus({ preventScroll: true });
+	}
+
+	function setCellValue(
+		sheetName: string,
+		cellRef: string,
+		value: string
+	): Promise<main.AppState | null> {
+		return runStateCommand(() => SetCellValue(sheetName, cellRef, value));
 	}
 
 	function setColumnWidth(sheetName: string, columnIndex: number, width: number): Promise<void> {
@@ -147,15 +159,24 @@
 		}
 	}
 
-	async function commitCellEdit(sheetName: string, cellRef: string, value: string): Promise<void> {
+	async function commitCellEdit(
+		sheetName: string,
+		cellRef: string,
+		value: string
+	): Promise<boolean> {
 		if (cellEditCommitting || !sheetName || !cellRef) {
-			return;
+			return false;
 		}
 
 		cellEditCommitting = true;
 		try {
-			await setCellValue(sheetName, cellRef, value);
+			const nextState = await setCellValue(sheetName, cellRef, value);
+			if (!nextState || nextState.status?.kind === 'error') {
+				return false;
+			}
+
 			cancelCellEdit(sheetName, cellRef);
+			return true;
 		} finally {
 			cellEditCommitting = false;
 		}
@@ -178,6 +199,58 @@
 		if (nextState) {
 			writePersistedAppearanceMode(mode);
 		}
+	}
+
+	function isSaveShortcut(event: KeyboardEvent): boolean {
+		return (
+			(event.ctrlKey || event.metaKey) &&
+			!event.altKey &&
+			!event.shiftKey &&
+			event.key.toLowerCase() === 's'
+		);
+	}
+
+	async function commitActiveEdit(): Promise<boolean> {
+		if (!cellEditSession) {
+			return true;
+		}
+
+		return commitCellEdit(
+			cellEditSession.sheetName,
+			cellEditSession.cellRef,
+			cellEditSession.value
+		);
+	}
+
+	async function saveWorkbookFromShortcut(): Promise<void> {
+		if (saveShortcutInProgress) {
+			return;
+		}
+
+		saveShortcutInProgress = true;
+		try {
+			const committed = await commitActiveEdit();
+			if (!committed) {
+				return;
+			}
+
+			await saveWorkbook();
+		} finally {
+			saveShortcutInProgress = false;
+		}
+	}
+
+	function handleGlobalKeydown(event: KeyboardEvent): void {
+		if (!isSaveShortcut(event)) {
+			return;
+		}
+
+		event.preventDefault();
+		if (event.repeat) {
+			return;
+		}
+
+		void saveWorkbookFromShortcut();
 	}
 
 	function resetDragState(): void {
@@ -236,6 +309,7 @@
 		const unsubscribeSystemTheme = subscribeToSystemThemeChanges((theme) => {
 			void updateSnapshot(() => SetSystemTheme(theme));
 		});
+		window.addEventListener('keydown', handleGlobalKeydown, true);
 
 		let fileDropRegistered = false;
 		try {
@@ -248,6 +322,7 @@
 		return () => {
 			isMounted = false;
 			unsubscribeSystemTheme();
+			window.removeEventListener('keydown', handleGlobalKeydown, true);
 			resetDragState();
 
 			if (fileDropRegistered) {
@@ -291,6 +366,7 @@
 			onUpdateCellEdit={updateCellEdit}
 			onCancelCellEdit={cancelCellEdit}
 			onCommitCellEdit={commitCellEdit}
+			onReturnFocusToCell={focusActiveGridCell}
 		/>
 	</section>
 

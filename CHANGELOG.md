@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyboard cell navigation with arrow keys, Tab/Shift+Tab, and
+  Enter/Shift+Enter, with Escape to cancel editing and return focus
+  to the originating cell; Ctrl+S / Cmd+S save shortcut that commits
+  any pending edit before saving
 - Column width and row height resizing with interactive drag handles
   and double-click auto-fit via DOM content measurement, backed by
   SetColumnWidth and SetRowHeight commands with pending-edit tracking

@@ -13,6 +13,19 @@
 		size: number
 	) => Promise<void> | void;
 
+	type SelectCellCallback = (cellRef: string) => Promise<void> | void;
+
+	type CellEditCommitCallback = (
+		sheetName: string,
+		cellRef: string,
+		value: string
+	) => Promise<boolean | void> | boolean | void;
+
+	type NavigationDelta = {
+		row: number;
+		column: number;
+	};
+
 	type ResizeSession = {
 		axis: ResizeAxis;
 		index: number;
@@ -30,7 +43,7 @@
 		dragActive?: boolean;
 		editSession?: CellEditSession | null;
 		editCommitting?: boolean;
-		onSelectCell?: (cellRef: string) => Promise<void> | void;
+		onSelectCell?: SelectCellCallback;
 		onBeginCellEdit?: (
 			source: CellEditSource,
 			sheetName: string,
@@ -44,7 +57,7 @@
 			value: string
 		) => void;
 		onCancelCellEdit?: (sheetName?: string, cellRef?: string) => void;
-		onCommitCellEdit?: (sheetName: string, cellRef: string, value: string) => Promise<void> | void;
+		onCommitCellEdit?: CellEditCommitCallback;
 		onSetColumnWidth?: ResizeCommitCallback;
 		onSetRowHeight?: ResizeCommitCallback;
 		onSetScrollPosition?: (topRow: number, leftColumn: number) => Promise<void> | void;
@@ -573,14 +586,28 @@
 		onCancelCellEdit?.(editSession?.sheetName, editSession?.cellRef);
 	}
 
-	async function commitInlineEdit(): Promise<void> {
-		if (editCommitting || !editSession || editSession.source !== 'grid') {
+	function focusGridCell(ref: string, options?: FocusOptions): void {
+		const cell = gridTableElement?.querySelector<HTMLElement>(`.grid-cell[data-cell-ref="${ref}"]`);
+		if (!cell) {
 			return;
+		}
+
+		if (options) {
+			cell.focus(options);
+			return;
+		}
+
+		cell.focus();
+	}
+
+	async function commitInlineEdit(): Promise<boolean> {
+		if (editCommitting || !editSession || editSession.source !== 'grid') {
+			return false;
 		}
 
 		if (!onCommitCellEdit || !editSession.sheetName || !editSession.cellRef) {
 			cancelInlineEdit();
-			return;
+			return false;
 		}
 
 		const cellRef = editSession.cellRef;
@@ -591,13 +618,24 @@
 
 		if (nextValue === originalValue) {
 			onCancelCellEdit?.(sheetName, cellRef);
-			return;
+			return true;
 		}
 
-		await onCommitCellEdit(sheetName, cellRef, nextValue);
+		try {
+			const commitResult = await onCommitCellEdit(sheetName, cellRef, nextValue);
+			if (commitResult === false) {
+				return false;
+			}
+		} catch (error) {
+			console.warn('Cell edit commit failed.', error);
+			return false;
+		}
+
 		if (shouldSelectAfterCommit) {
 			await onSelectCell?.(cellRef);
 		}
+
+		return true;
 	}
 
 	function shouldStartEditFromKey(event: KeyboardEvent): boolean {
@@ -610,9 +648,88 @@
 		);
 	}
 
+	function getNavigationDelta(event: KeyboardEvent): NavigationDelta | null {
+		if (event.altKey || event.ctrlKey || event.metaKey) {
+			return null;
+		}
+
+		switch (event.key) {
+			case 'ArrowUp':
+				return event.shiftKey ? null : { row: -1, column: 0 };
+			case 'ArrowDown':
+				return event.shiftKey ? null : { row: 1, column: 0 };
+			case 'ArrowLeft':
+				return event.shiftKey ? null : { row: 0, column: -1 };
+			case 'ArrowRight':
+				return event.shiftKey ? null : { row: 0, column: 1 };
+			case 'Tab':
+				return { row: 0, column: event.shiftKey ? -1 : 1 };
+			case 'Enter':
+				return { row: event.shiftKey ? -1 : 1, column: 0 };
+			default:
+				return null;
+		}
+	}
+
+	function getNavigationTarget(row: number, column: number, delta: NavigationDelta): string | null {
+		const nextRow = row + delta.row;
+		const nextColumn = column + delta.column;
+
+		if (nextRow < 1 || nextColumn < 1) {
+			return null;
+		}
+
+		return `${getColLabel(nextColumn - 1)}${nextRow}`;
+	}
+
+	async function navigateFromCell(
+		row: number,
+		column: number,
+		delta: NavigationDelta
+	): Promise<void> {
+		const nextRef = getNavigationTarget(row, column, delta);
+		if (!nextRef || !onSelectCell) {
+			return;
+		}
+
+		await onSelectCell(nextRef);
+		await tick();
+		focusGridCell(nextRef);
+	}
+
+	async function commitInlineEditAndNavigate(
+		row: number,
+		column: number,
+		delta: NavigationDelta
+	): Promise<void> {
+		const committed = await commitInlineEdit();
+		if (!committed) {
+			return;
+		}
+
+		await navigateFromCell(row, column, delta);
+	}
+
+	async function cancelInlineEditAndFocus(ref: string, input: HTMLInputElement): Promise<void> {
+		cancelInlineEdit();
+		input.blur();
+		await tick();
+		focusGridCell(ref, { preventScroll: true });
+	}
+
+	function handleCellFocus(ref: string): void {
+		if (ref === activeCellRef) {
+			return;
+		}
+
+		void onSelectCell?.(ref);
+	}
+
 	function handleCellKeydown(
 		event: KeyboardEvent,
 		ref: string,
+		row: number,
+		column: number,
 		cell: main.CellData | undefined,
 		mergedInfo: MergedInfo | undefined
 	): void {
@@ -628,7 +745,14 @@
 			return;
 		}
 
-		if (event.key === 'Enter' || event.key === ' ') {
+		const delta = getNavigationDelta(event);
+		if (delta) {
+			event.preventDefault();
+			void navigateFromCell(row, column, delta);
+			return;
+		}
+
+		if (event.key === ' ') {
 			event.preventDefault();
 			onSelectCell?.(ref);
 		}
@@ -647,19 +771,24 @@
 		);
 	}
 
-	function handleEditorKeydown(event: KeyboardEvent): void {
+	function handleEditorKeydown(
+		event: KeyboardEvent,
+		ref: string,
+		row: number,
+		column: number
+	): void {
 		event.stopPropagation();
 
-		if (event.key === 'Enter') {
+		const delta = getNavigationDelta(event);
+		if (delta && (event.key === 'Enter' || event.key === 'Tab')) {
 			event.preventDefault();
-			void commitInlineEdit();
+			void commitInlineEditAndNavigate(row, column, delta);
 			return;
 		}
 
 		if (event.key === 'Escape') {
 			event.preventDefault();
-			cancelInlineEdit();
-			(event.currentTarget as HTMLInputElement).blur();
+			void cancelInlineEditAndFocus(ref, event.currentTarget as HTMLInputElement);
 		}
 	}
 
@@ -682,9 +811,7 @@
 			return;
 		}
 
-		document
-			.querySelector<HTMLElement>('.spreadsheet-viewport .grid-cell.active-cell')
-			?.focus({ preventScroll: true });
+		focusGridCell(activeCellRef, { preventScroll: true });
 	}
 
 	onMount(() => {
@@ -781,8 +908,12 @@
 
 		resizeEditCommitInProgress = true;
 		try {
-			await onCommitCellEdit(editSession.sheetName, editSession.cellRef, editSession.value);
-			return true;
+			const commitResult = await onCommitCellEdit(
+				editSession.sheetName,
+				editSession.cellRef,
+				editSession.value
+			);
+			return commitResult !== false;
 		} finally {
 			resizeEditCommitInProgress = false;
 		}
@@ -1115,11 +1246,13 @@
 						data-column-index={column.index}
 						title={getGridCellTitle(ref, cell, mergedInfo)}
 						onclick={() => onSelectCell?.(ref)}
+						onfocus={() => handleCellFocus(ref)}
 						ondblclick={(event) => {
 							event.preventDefault();
 							beginInlineEdit(ref, cell, mergedInfo);
 						}}
-						onkeydown={(event) => handleCellKeydown(event, ref, cell, mergedInfo)}
+						onkeydown={(event) =>
+							handleCellKeydown(event, ref, row, column.index, cell, mergedInfo)}
 						role="gridcell"
 						tabindex="0"
 						aria-selected={isCellSelected(row, column.index)}
@@ -1141,7 +1274,7 @@
 								aria-label={`Edit ${ref} in ${activeSheetName}`}
 								value={editSession?.value ?? ''}
 								oninput={handleEditorInput}
-								onkeydown={handleEditorKeydown}
+								onkeydown={(event) => handleEditorKeydown(event, ref, row, column.index)}
 								onclick={(event) => event.stopPropagation()}
 								ondblclick={(event) => event.stopPropagation()}
 								onblur={handleEditorBlur}
