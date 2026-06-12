@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Column width and row height resizing via SetColumnWidth and
-  SetRowHeight commands with pending-edit tracking and save
-  support for both opened and untitled xlsx workbooks
+- Column width and row height resizing with interactive drag handles
+  and double-click auto-fit via DOM content measurement, backed by
+  SetColumnWidth and SetRowHeight commands with pending-edit tracking
+  and save support for both opened and untitled xlsx workbooks
 - Exit command in File menu dropdown that closes the app via the Wails runtime Quit function
 - Stateful App struct with synchronized AppState and view-model methods
   (State, SetActiveSheet, SelectCell, SetScrollPosition, SetZoom),

@@ -19,6 +19,8 @@
 		SetActiveSheet,
 		SetAppearanceMode,
 		SetCellValue,
+		SetColumnWidth,
+		SetRowHeight,
 		SetScrollPosition,
 		SetSystemTheme,
 		SetZoom
@@ -94,6 +96,14 @@
 
 	function setCellValue(sheetName: string, cellRef: string, value: string): Promise<void> {
 		return updateSnapshot(() => SetCellValue(sheetName, cellRef, value));
+	}
+
+	function setColumnWidth(sheetName: string, columnIndex: number, width: number): Promise<void> {
+		return updateSnapshot(() => SetColumnWidth(sheetName, columnIndex, width));
+	}
+
+	function setRowHeight(sheetName: string, rowIndex: number, height: number): Promise<void> {
+		return updateSnapshot(() => SetRowHeight(sheetName, rowIndex, height));
 	}
 
 	function isCurrentEditSession(sheetName: string, cellRef: string): boolean {
@@ -303,6 +313,8 @@
 			onUpdateCellEdit={updateCellEdit}
 			onCancelCellEdit={cancelCellEdit}
 			onCommitCellEdit={commitCellEdit}
+			onSetColumnWidth={setColumnWidth}
+			onSetRowHeight={setRowHeight}
 			onSetScrollPosition={setScrollPosition}
 		/>
 	</main>

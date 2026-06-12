@@ -5,6 +5,24 @@
 	import type { main } from '$lib/wailsjs/go/models';
 	import type { CellEditSession, CellEditSource } from './cellEditSession';
 
+	type ResizeAxis = 'column' | 'row';
+
+	type ResizeCommitCallback = (
+		sheetName: string,
+		index: number,
+		size: number
+	) => Promise<void> | void;
+
+	type ResizeSession = {
+		axis: ResizeAxis;
+		index: number;
+		sheetName: string;
+		pointerId: number;
+		startPointerPosition: number;
+		startSizePx: number;
+		draftSizePx: number;
+	};
+
 	type Props = {
 		activeSheet?: main.WorkbookSheet;
 		view?: main.WorkbookViewState;
@@ -27,6 +45,8 @@
 		) => void;
 		onCancelCellEdit?: (sheetName?: string, cellRef?: string) => void;
 		onCommitCellEdit?: (sheetName: string, cellRef: string, value: string) => Promise<void> | void;
+		onSetColumnWidth?: ResizeCommitCallback;
+		onSetRowHeight?: ResizeCommitCallback;
 		onSetScrollPosition?: (topRow: number, leftColumn: number) => Promise<void> | void;
 	};
 
@@ -39,6 +59,15 @@
 
 	const MIN_COLUMN_COUNT = 40;
 	const MIN_ROW_COUNT = 100;
+	const COLUMN_WIDTH_TO_PX = 8;
+	const ROW_HEIGHT_TO_PX = 1.3;
+	const MIN_COLUMN_WIDTH_PX = 24;
+	const MIN_ROW_HEIGHT_PX = 18;
+	const DEFAULT_COLUMN_WIDTH = 8.43;
+	const DEFAULT_ROW_HEIGHT = 15;
+	const AUTO_FIT_HORIZONTAL_BUFFER_PX = 12;
+	const AUTO_FIT_VERTICAL_BUFFER_PX = 4;
+	const RESIZE_COMMIT_EPSILON_PX = 0.5;
 
 	let {
 		activeSheet,
@@ -52,11 +81,16 @@
 		onUpdateCellEdit,
 		onCancelCellEdit,
 		onCommitCellEdit,
+		onSetColumnWidth,
+		onSetRowHeight,
 		onSetScrollPosition
 	}: Props = $props();
 
 	let selectEditorTextOnFocus = true;
 	let skipNextEditorBlurCommit = false;
+	let resizeSession = $state<ResizeSession | null>(null);
+	let resizeEditCommitInProgress = false;
+	let gridTableElement: HTMLDivElement | undefined;
 
 	// Helper to generate spreadsheet column labels (A, B, ..., Z, AA, AB, ..., AN)
 	function getColLabel(index: number): string {
@@ -117,6 +151,66 @@
 		}
 
 		return count;
+	}
+
+	function columnWidthToPx(width: number): number {
+		return width * COLUMN_WIDTH_TO_PX;
+	}
+
+	function columnPxToWidth(widthPx: number): number {
+		return widthPx / COLUMN_WIDTH_TO_PX;
+	}
+
+	function rowHeightToPx(height: number): number {
+		return height * ROW_HEIGHT_TO_PX;
+	}
+
+	function rowPxToHeight(heightPx: number): number {
+		return heightPx / ROW_HEIGHT_TO_PX;
+	}
+
+	function getEffectiveColumnWidth(index: number): number {
+		const layout = columnLayoutsByIndex.get(index);
+		if (layout) {
+			return layout.width;
+		}
+
+		return activeSheet?.defaultColumnWidth || DEFAULT_COLUMN_WIDTH;
+	}
+
+	function getEffectiveRowHeight(index: number): number {
+		const layout = rowLayoutsByIndex.get(index);
+		if (layout) {
+			return layout.height;
+		}
+
+		return activeSheet?.defaultRowHeight || DEFAULT_ROW_HEIGHT;
+	}
+
+	function getColumnWidthPx(index: number, includeDraft = true): number {
+		const layout = columnLayoutsByIndex.get(index);
+		if (layout?.hidden) {
+			return 0;
+		}
+
+		if (includeDraft && resizeSession?.axis === 'column' && resizeSession.index === index) {
+			return resizeSession.draftSizePx;
+		}
+
+		return columnWidthToPx(getEffectiveColumnWidth(index));
+	}
+
+	function getRowHeightPx(index: number, includeDraft = true): number {
+		const layout = rowLayoutsByIndex.get(index);
+		if (layout?.hidden) {
+			return 0;
+		}
+
+		if (includeDraft && resizeSession?.axis === 'row' && resizeSession.index === index) {
+			return resizeSession.draftSizePx;
+		}
+
+		return rowHeightToPx(getEffectiveRowHeight(index));
 	}
 
 	function createColumns(count: number): ColumnHeader[] {
@@ -368,6 +462,7 @@
 	const selectCommandWired = $derived(Boolean(onSelectCell));
 	const cellEditCommandWired = $derived(Boolean(onCommitCellEdit));
 	const scrollCommandWired = $derived(Boolean(onSetScrollPosition));
+	const resizeCommandWired = $derived(Boolean(onSetColumnWidth && onSetRowHeight));
 
 	const mergedLookups = $derived(createMergedLookups(activeSheet));
 	const mergedCellLookup = $derived(mergedLookups.mergedCellLookup);
@@ -381,33 +476,16 @@
 		new Set((activeSheet?.rows ?? []).filter((row) => row.hidden).map((row) => row.index))
 	);
 
-	const colWidthsCss = $derived(
-		columns
-			.map((col) => {
-				const layout = activeSheet?.columns?.find((c) => c.index === col.index);
-				if (layout) {
-					if (layout.hidden) return '0px';
-					return `${layout.width * 8}px`;
-				}
-				const defWidth = activeSheet?.defaultColumnWidth || 8.43;
-				return `${defWidth * 8}px`;
-			})
-			.join(' ')
+	const columnLayoutsByIndex = $derived(
+		new Map((activeSheet?.columns ?? []).map((column) => [column.index, column]))
+	);
+	const rowLayoutsByIndex = $derived(
+		new Map((activeSheet?.rows ?? []).map((row) => [row.index, row]))
 	);
 
-	const rowHeightsCss = $derived(
-		rows
-			.map((row) => {
-				const layout = activeSheet?.rows?.find((r) => r.index === row);
-				if (layout) {
-					if (layout.hidden) return '0px';
-					return `${layout.height * 1.3}px`;
-				}
-				const defHeight = activeSheet?.defaultRowHeight || 15;
-				return `${defHeight * 1.3}px`;
-			})
-			.join(' ')
-	);
+	const colWidthsCss = $derived(columns.map((col) => `${getColumnWidthPx(col.index)}px`).join(' '));
+
+	const rowHeightsCss = $derived(rows.map((row) => `${getRowHeightPx(row)}px`).join(' '));
 
 	const metadataLabel = $derived(
 		`${activeSheet?.cells?.length ?? 0} loaded cells rendered across ${rowCount} rows and ${columnCount} columns. ${styles.length} styles are available for later grid rendering.`
@@ -456,6 +534,16 @@
 			const cursorPosition = node.value.length;
 			node.setSelectionRange(cursorPosition, cursorPosition);
 		});
+	};
+
+	const gridTableAttachment: Attachment<HTMLDivElement> = (node) => {
+		gridTableElement = node;
+
+		return () => {
+			if (gridTableElement === node) {
+				gridTableElement = undefined;
+			}
+		};
 	};
 
 	function beginInlineEdit(
@@ -581,6 +669,10 @@
 			return;
 		}
 
+		if (resizeEditCommitInProgress) {
+			return;
+		}
+
 		void commitInlineEdit();
 	}
 
@@ -597,6 +689,12 @@
 
 	onMount(() => {
 		void focusInitialActiveCell();
+		window.addEventListener('keydown', handleResizeKeydown);
+
+		return () => {
+			window.removeEventListener('keydown', handleResizeKeydown);
+			resizeSession = null;
+		};
 	});
 
 	function handleScroll(event: Event) {
@@ -610,12 +708,7 @@
 		let accumulatedWidth = 0;
 		let leftColumn = 1;
 		for (const col of columns) {
-			const layout = activeSheet?.columns?.find((c) => c.index === col.index);
-			const width = layout
-				? layout.hidden
-					? 0
-					: layout.width * 8
-				: (activeSheet?.defaultColumnWidth || 8.43) * 8;
+			const width = getColumnWidthPx(col.index);
 
 			if (accumulatedWidth + width > scrollLeft) {
 				leftColumn = col.index;
@@ -627,12 +720,7 @@
 		let accumulatedHeight = 0;
 		let topRow = 1;
 		for (const row of rows) {
-			const layout = activeSheet?.rows?.find((r) => r.index === row);
-			const height = layout
-				? layout.hidden
-					? 0
-					: layout.height * 1.3
-				: (activeSheet?.defaultRowHeight || 15) * 1.3;
+			const height = getRowHeightPx(row);
 
 			if (accumulatedHeight + height > scrollTop) {
 				topRow = row;
@@ -645,16 +733,294 @@
 			onSetScrollPosition(topRow, leftColumn);
 		}
 	}
+
+	function stopResizeEvent(event: Event): void {
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
+	function canResizeAxis(axis: ResizeAxis): boolean {
+		return (
+			Boolean(activeSheet?.name) && Boolean(axis === 'column' ? onSetColumnWidth : onSetRowHeight)
+		);
+	}
+
+	function isActiveResize(axis: ResizeAxis, index: number): boolean {
+		return resizeSession?.axis === axis && resizeSession.index === index;
+	}
+
+	function getResizePointerPosition(event: PointerEvent, axis: ResizeAxis): number {
+		return axis === 'column' ? event.clientX : event.clientY;
+	}
+
+	function getResizeStartSizePx(axis: ResizeAxis, index: number): number {
+		return axis === 'column' ? getColumnWidthPx(index, false) : getRowHeightPx(index, false);
+	}
+
+	function getResizeMinimumPx(axis: ResizeAxis): number {
+		return axis === 'column' ? MIN_COLUMN_WIDTH_PX : MIN_ROW_HEIGHT_PX;
+	}
+
+	function getResizeCommitCallback(axis: ResizeAxis): ResizeCommitCallback | undefined {
+		return axis === 'column' ? onSetColumnWidth : onSetRowHeight;
+	}
+
+	async function commitActiveEditBeforeResize(): Promise<boolean> {
+		if (!editSession) {
+			return true;
+		}
+
+		if (editCommitting || resizeEditCommitInProgress) {
+			return false;
+		}
+
+		if (!onCommitCellEdit || !editSession.sheetName || !editSession.cellRef) {
+			onCancelCellEdit?.(editSession.sheetName, editSession.cellRef);
+			return true;
+		}
+
+		resizeEditCommitInProgress = true;
+		try {
+			await onCommitCellEdit(editSession.sheetName, editSession.cellRef, editSession.value);
+			return true;
+		} finally {
+			resizeEditCommitInProgress = false;
+		}
+	}
+
+	async function handleResizePointerDown(
+		event: PointerEvent,
+		axis: ResizeAxis,
+		index: number
+	): Promise<void> {
+		stopResizeEvent(event);
+
+		if (event.button !== 0 || event.detail > 1 || resizeSession || !canResizeAxis(axis)) {
+			return;
+		}
+
+		const handle = event.currentTarget as HTMLElement;
+		try {
+			handle.setPointerCapture(event.pointerId);
+		} catch (error) {
+			console.warn('Resize pointer capture failed.', error);
+			return;
+		}
+
+		const readyToResize = await commitActiveEditBeforeResize();
+		if (!readyToResize || !handle.hasPointerCapture(event.pointerId)) {
+			if (handle.hasPointerCapture(event.pointerId)) {
+				handle.releasePointerCapture(event.pointerId);
+			}
+			return;
+		}
+
+		const startPointerPosition = getResizePointerPosition(event, axis);
+		const startSizePx = Math.max(getResizeMinimumPx(axis), getResizeStartSizePx(axis, index));
+		resizeSession = {
+			axis,
+			index,
+			sheetName: activeSheet?.name ?? activeSheetName,
+			pointerId: event.pointerId,
+			startPointerPosition,
+			startSizePx,
+			draftSizePx: startSizePx
+		};
+	}
+
+	function handleResizePointerMove(event: PointerEvent): void {
+		if (!resizeSession || event.pointerId !== resizeSession.pointerId) {
+			return;
+		}
+
+		stopResizeEvent(event);
+		const pointerPosition = getResizePointerPosition(event, resizeSession.axis);
+		const delta = pointerPosition - resizeSession.startPointerPosition;
+		const draftSizePx = Math.max(
+			getResizeMinimumPx(resizeSession.axis),
+			resizeSession.startSizePx + delta
+		);
+		resizeSession = { ...resizeSession, draftSizePx };
+	}
+
+	async function handleResizePointerUp(event: PointerEvent): Promise<void> {
+		if (!resizeSession || event.pointerId !== resizeSession.pointerId) {
+			return;
+		}
+
+		stopResizeEvent(event);
+		const session = resizeSession;
+		resizeSession = null;
+
+		const handle = event.currentTarget as HTMLElement;
+		if (handle.hasPointerCapture(event.pointerId)) {
+			handle.releasePointerCapture(event.pointerId);
+		}
+
+		const finalSizePx = Math.max(getResizeMinimumPx(session.axis), session.draftSizePx);
+		if (Math.abs(finalSizePx - session.startSizePx) < RESIZE_COMMIT_EPSILON_PX) {
+			return;
+		}
+
+		const commitResize = getResizeCommitCallback(session.axis);
+		if (!commitResize) {
+			return;
+		}
+
+		const workbookSize =
+			session.axis === 'column' ? columnPxToWidth(finalSizePx) : rowPxToHeight(finalSizePx);
+		await commitResize(session.sheetName, session.index, workbookSize);
+	}
+
+	function handleResizePointerCancel(event: PointerEvent): void {
+		if (!resizeSession || event.pointerId !== resizeSession.pointerId) {
+			return;
+		}
+
+		stopResizeEvent(event);
+		resizeSession = null;
+	}
+
+	function handleResizeLostPointerCapture(event: PointerEvent): void {
+		if (resizeSession?.pointerId === event.pointerId) {
+			resizeSession = null;
+		}
+	}
+
+	function handleResizeKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || !resizeSession) {
+			return;
+		}
+
+		event.preventDefault();
+		resizeSession = null;
+	}
+
+	function parseCssPixels(value: string): number {
+		const parsed = Number.parseFloat(value);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+
+	function getBoxExtraPixels(element: HTMLElement, axis: ResizeAxis): number {
+		const styles = getComputedStyle(element);
+		if (axis === 'column') {
+			return (
+				parseCssPixels(styles.paddingLeft) +
+				parseCssPixels(styles.paddingRight) +
+				parseCssPixels(styles.borderLeftWidth) +
+				parseCssPixels(styles.borderRightWidth)
+			);
+		}
+
+		return (
+			parseCssPixels(styles.paddingTop) +
+			parseCssPixels(styles.paddingBottom) +
+			parseCssPixels(styles.borderTopWidth) +
+			parseCssPixels(styles.borderBottomWidth)
+		);
+	}
+
+	function measureRangeSize(element: HTMLElement): { width: number; height: number } {
+		const range = document.createRange();
+		range.selectNodeContents(element);
+		const rect = range.getBoundingClientRect();
+		range.detach();
+		return { width: rect.width, height: rect.height };
+	}
+
+	function measureRenderedContent(element: HTMLElement): { width: number; height: number } {
+		const content =
+			element.querySelector<HTMLElement>('.header-label, .cell-value, .cell-editor') ?? element;
+		const usesElementContent = content === element;
+		const rangeSize =
+			content instanceof HTMLInputElement ? { width: 0, height: 0 } : measureRangeSize(content);
+		const contentWidth =
+			content instanceof HTMLInputElement
+				? content.scrollWidth
+				: usesElementContent
+					? rangeSize.width
+					: Math.max(rangeSize.width, content.scrollWidth);
+		const contentHeight =
+			content instanceof HTMLInputElement
+				? content.scrollHeight
+				: usesElementContent
+					? rangeSize.height
+					: Math.max(rangeSize.height, content.scrollHeight);
+
+		return {
+			width: contentWidth + getBoxExtraPixels(element, 'column'),
+			height: contentHeight + getBoxExtraPixels(element, 'row')
+		};
+	}
+
+	function measureColumnAutoFitPx(columnIndex: number): number {
+		let maxWidth = 0;
+		const measureTargets = gridTableElement?.querySelectorAll<HTMLElement>(
+			`.column-header[data-column-index="${columnIndex}"], .grid-cell[data-column-index="${columnIndex}"]`
+		);
+
+		for (const element of measureTargets ?? []) {
+			maxWidth = Math.max(maxWidth, measureRenderedContent(element).width);
+		}
+
+		return Math.max(MIN_COLUMN_WIDTH_PX, Math.ceil(maxWidth + AUTO_FIT_HORIZONTAL_BUFFER_PX));
+	}
+
+	function measureRowAutoFitPx(rowIndex: number): number {
+		let maxHeight = 0;
+		const measureTargets = gridTableElement?.querySelectorAll<HTMLElement>(
+			`.row-header[data-row-index="${rowIndex}"], .grid-cell[data-row-index="${rowIndex}"]`
+		);
+
+		for (const element of measureTargets ?? []) {
+			maxHeight = Math.max(maxHeight, measureRenderedContent(element).height);
+		}
+
+		return Math.max(MIN_ROW_HEIGHT_PX, Math.ceil(maxHeight + AUTO_FIT_VERTICAL_BUFFER_PX));
+	}
+
+	async function handleResizeDoubleClick(
+		event: MouseEvent,
+		axis: ResizeAxis,
+		index: number
+	): Promise<void> {
+		stopResizeEvent(event);
+		resizeSession = null;
+
+		if (!canResizeAxis(axis)) {
+			return;
+		}
+
+		const readyToResize = await commitActiveEditBeforeResize();
+		if (!readyToResize) {
+			return;
+		}
+
+		const commitResize = getResizeCommitCallback(axis);
+		if (!commitResize) {
+			return;
+		}
+
+		const fittedSizePx =
+			axis === 'column' ? measureColumnAutoFitPx(index) : measureRowAutoFitPx(index);
+		const workbookSize =
+			axis === 'column' ? columnPxToWidth(fittedSizePx) : rowPxToHeight(fittedSizePx);
+		await commitResize(activeSheet?.name ?? activeSheetName, index, workbookSize);
+	}
 </script>
 
 <div
 	class="spreadsheet-viewport"
 	class:drag-active={dragActive}
+	class:resize-active={resizeSession !== null}
+	class:resizing-column={resizeSession?.axis === 'column'}
+	class:resizing-row={resizeSession?.axis === 'row'}
 	role="region"
 	aria-label={viewportLabel}
 	onscroll={handleScroll}
 >
 	<div
+		{@attach gridTableAttachment}
 		class="grid-table"
 		role="grid"
 		aria-rowcount={rowCount + 1}
@@ -663,6 +1029,7 @@
 		data-select-command-wired={selectCommandWired}
 		data-cell-edit-command-wired={cellEditCommandWired}
 		data-scroll-command-wired={scrollCommandWired}
+		data-resize-command-wired={resizeCommandWired}
 		style="
 			grid-template-columns: var(--row-header-width, 40px) {colWidthsCss};
 			grid-template-rows: var(--header-row-height, 24px) {rowHeightsCss};
@@ -679,8 +1046,23 @@
 					class:active={column.label === activeColumnLabel}
 					style="grid-row: 1; grid-column: {column.index + 1};"
 					role="columnheader"
+					data-column-index={column.index}
 				>
-					{column.label}
+					<span class="header-label">{column.label}</span>
+					<button
+						type="button"
+						class="resize-handle resize-handle--column"
+						class:active={isActiveResize('column', column.index)}
+						tabindex="-1"
+						aria-hidden="true"
+						onclick={stopResizeEvent}
+						ondblclick={(event) => void handleResizeDoubleClick(event, 'column', column.index)}
+						onpointerdown={(event) => void handleResizePointerDown(event, 'column', column.index)}
+						onpointermove={handleResizePointerMove}
+						onpointerup={(event) => void handleResizePointerUp(event)}
+						onpointercancel={handleResizePointerCancel}
+						onlostpointercapture={handleResizeLostPointerCapture}
+					></button>
 				</div>
 			{/if}
 		{/each}
@@ -694,8 +1076,23 @@
 					class:active={row === activeRowIndex}
 					style="grid-row: {row + 1}; grid-column: 1;"
 					role="rowheader"
+					data-row-index={row}
 				>
-					{row}
+					<span class="header-label">{row}</span>
+					<button
+						type="button"
+						class="resize-handle resize-handle--row"
+						class:active={isActiveResize('row', row)}
+						tabindex="-1"
+						aria-hidden="true"
+						onclick={stopResizeEvent}
+						ondblclick={(event) => void handleResizeDoubleClick(event, 'row', row)}
+						onpointerdown={(event) => void handleResizePointerDown(event, 'row', row)}
+						onpointermove={handleResizePointerMove}
+						onpointerup={(event) => void handleResizePointerUp(event)}
+						onpointercancel={handleResizePointerCancel}
+						onlostpointercapture={handleResizeLostPointerCapture}
+					></button>
 				</div>
 			{/if}
 
@@ -714,6 +1111,8 @@
 						class:editing-cell={isInlineEditingCell(ref)}
 						data-cell-ref={ref}
 						data-cell-kind={cell?.kind}
+						data-row-index={row}
+						data-column-index={column.index}
 						title={getGridCellTitle(ref, cell, mergedInfo)}
 						onclick={() => onSelectCell?.(ref)}
 						ondblclick={(event) => {
@@ -788,6 +1187,20 @@
 	.spreadsheet-viewport.drag-active {
 		outline: 2px solid var(--color-selection-border);
 		outline-offset: -2px;
+	}
+
+	.spreadsheet-viewport.resize-active {
+		user-select: none;
+	}
+
+	.spreadsheet-viewport.resizing-column,
+	.spreadsheet-viewport.resizing-column * {
+		cursor: col-resize;
+	}
+
+	.spreadsheet-viewport.resizing-row,
+	.spreadsheet-viewport.resizing-row * {
+		cursor: row-resize;
 	}
 
 	/* CSS Grid for perfect tabular spreadsheet alignment */
@@ -869,6 +1282,73 @@
 		background-color: var(--color-surface-hover);
 		/* Subtle active indicator bar on the right edge */
 		box-shadow: inset -2px 0 0 0 var(--color-selection-border);
+	}
+
+	.header-label {
+		pointer-events: none;
+	}
+
+	.resize-handle {
+		appearance: none;
+		position: absolute;
+		z-index: 7;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		box-sizing: border-box;
+		touch-action: none;
+		user-select: none;
+	}
+
+	.resize-handle:focus {
+		outline: none;
+	}
+
+	.resize-handle::after {
+		content: '';
+		position: absolute;
+		background-color: var(--color-selection-border);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 0.1s ease;
+	}
+
+	.resize-handle--column {
+		top: 0;
+		right: -4px;
+		width: 8px;
+		height: 100%;
+		cursor: col-resize;
+	}
+
+	.resize-handle--column::after {
+		top: 3px;
+		bottom: 3px;
+		left: 3px;
+		width: 2px;
+	}
+
+	.resize-handle--row {
+		left: 0;
+		right: 0;
+		bottom: -4px;
+		height: 8px;
+		cursor: row-resize;
+	}
+
+	.resize-handle--row::after {
+		top: 3px;
+		left: 3px;
+		right: 3px;
+		height: 2px;
+	}
+
+	.column-header:hover .resize-handle--column::after,
+	.row-header:hover .resize-handle--row::after,
+	.resize-handle.active::after {
+		opacity: 1;
 	}
 
 	/* Standard spreadsheet data cell with subtle gridline */
