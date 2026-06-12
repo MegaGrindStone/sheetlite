@@ -25,7 +25,7 @@
 		SetSystemTheme,
 		SetZoom
 	} from '$lib/wailsjs/go/main/App';
-	import type { main } from '$lib/wailsjs/go/models';
+	import { main } from '$lib/wailsjs/go/models';
 	import { OnFileDrop, OnFileDropOff, Quit } from '$lib/wailsjs/runtime/runtime';
 	import TopChrome from './TopChrome.svelte';
 	import FormulaBar from './FormulaBar.svelte';
@@ -171,7 +171,7 @@
 		cellEditCommitting = true;
 		try {
 			const nextState = await setCellValue(sheetName, cellRef, value);
-			if (!nextState || nextState.status?.kind === 'error') {
+			if (!nextState || nextState.status?.kind === main.AppStatusKind.Error) {
 				return false;
 			}
 

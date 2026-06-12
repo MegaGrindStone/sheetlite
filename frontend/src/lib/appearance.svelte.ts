@@ -1,5 +1,7 @@
-export type AppearanceMode = 'light' | 'dark' | 'system';
-export type AppearanceTheme = 'light' | 'dark';
+import { main } from '$lib/wailsjs/go/models';
+
+export type AppearanceMode = main.AppearanceMode;
+export type AppearanceTheme = main.AppearanceTheme;
 export type EffectiveTheme = AppearanceTheme;
 
 export interface AppearanceOption {
@@ -8,41 +10,50 @@ export interface AppearanceOption {
 }
 
 export interface BackendAppearance {
-	mode?: string;
-	systemTheme?: string;
-	effectiveTheme?: string;
+	mode?: unknown;
+	systemTheme?: unknown;
+	effectiveTheme?: unknown;
 }
 
 export const appearanceOptions: AppearanceOption[] = [
-	{ value: 'system', label: 'System' },
-	{ value: 'light', label: 'Light' },
-	{ value: 'dark', label: 'Dark' }
+	{ value: main.AppearanceMode.System, label: 'System' },
+	{ value: main.AppearanceMode.Light, label: 'Light' },
+	{ value: main.AppearanceMode.Dark, label: 'Dark' }
 ];
 
 const STORAGE_KEY = 'sheetlite_appearance_mode';
 const MEDIA_QUERY_DARK = '(prefers-color-scheme: dark)';
 
 export function isAppearanceMode(value: unknown): value is AppearanceMode {
-	return value === 'light' || value === 'dark' || value === 'system';
+	return (
+		value === main.AppearanceMode.Light ||
+		value === main.AppearanceMode.Dark ||
+		value === main.AppearanceMode.System
+	);
 }
 
 export function isAppearanceTheme(value: unknown): value is AppearanceTheme {
-	return value === 'light' || value === 'dark';
+	return value === main.AppearanceTheme.Light || value === main.AppearanceTheme.Dark;
+}
+
+export function normalizeAppearanceMode(value: unknown): AppearanceMode {
+	return isAppearanceMode(value) ? value : main.AppearanceMode.System;
+}
+
+export function normalizeAppearanceTheme(value: unknown): AppearanceTheme {
+	return isAppearanceTheme(value) ? value : main.AppearanceTheme.Light;
 }
 
 export function readPersistedAppearanceMode(): AppearanceMode {
 	try {
 		if (typeof localStorage !== 'undefined') {
-			const value = localStorage.getItem(STORAGE_KEY);
-			if (isAppearanceMode(value)) {
-				return value;
-			}
+			return normalizeAppearanceMode(localStorage.getItem(STORAGE_KEY));
 		}
 	} catch {
 		// Silently fallback in restricted/sandboxed environments.
 	}
 
-	return 'system';
+	return main.AppearanceMode.System;
 }
 
 export function writePersistedAppearanceMode(mode: AppearanceMode): void {
@@ -61,10 +72,12 @@ function supportsMatchMedia(): boolean {
 
 export function detectSystemTheme(): AppearanceTheme {
 	if (!supportsMatchMedia()) {
-		return 'light';
+		return main.AppearanceTheme.Light;
 	}
 
-	return window.matchMedia(MEDIA_QUERY_DARK).matches ? 'dark' : 'light';
+	return window.matchMedia(MEDIA_QUERY_DARK).matches
+		? main.AppearanceTheme.Dark
+		: main.AppearanceTheme.Light;
 }
 
 export function subscribeToSystemThemeChanges(
@@ -76,7 +89,7 @@ export function subscribeToSystemThemeChanges(
 
 	const mediaQuery = window.matchMedia(MEDIA_QUERY_DARK);
 	const handleMediaChange = (event: MediaQueryListEvent): void => {
-		onChange(event.matches ? 'dark' : 'light');
+		onChange(event.matches ? main.AppearanceTheme.Dark : main.AppearanceTheme.Light);
 	};
 
 	mediaQuery.addEventListener('change', handleMediaChange);
@@ -91,10 +104,8 @@ export function applyAppearanceAttributes(appearance?: BackendAppearance | null)
 		return;
 	}
 
-	const mode = isAppearanceMode(appearance.mode) ? appearance.mode : 'system';
-	const effectiveTheme = isAppearanceTheme(appearance.effectiveTheme)
-		? appearance.effectiveTheme
-		: 'light';
+	const mode = normalizeAppearanceMode(appearance.mode);
+	const effectiveTheme = normalizeAppearanceTheme(appearance.effectiveTheme);
 
 	document.documentElement.dataset.theme = effectiveTheme;
 	document.documentElement.dataset.appearance = mode;

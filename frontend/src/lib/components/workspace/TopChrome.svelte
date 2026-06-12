@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Attachment } from 'svelte/attachments';
 	import type { AppearanceMode } from '$lib/appearance.svelte';
-	import type { main } from '$lib/wailsjs/go/models';
+	import { main } from '$lib/wailsjs/go/models';
 	import AppearanceControl from './AppearanceControl.svelte';
 
 	type FileCommand = 'open' | 'save' | 'save-as' | 'exit';
@@ -34,7 +34,7 @@
 	const workbookReady = $derived(Boolean(workbook));
 	const workbookDirty = $derived(Boolean(workbook?.dirty));
 	const workbookUnsaved = $derived(workbookReady && !workbook?.filePath);
-	const statusKind = $derived(status?.kind ?? 'ready');
+	const statusKind = $derived(status?.kind ?? main.AppStatusKind.Ready);
 	const statusMessage = $derived(status?.message?.trim() || 'Ready');
 	const statusLabel = $derived(status?.busy ? 'Working…' : statusMessage);
 	const statusTitle = $derived(`${statusKind}: ${statusMessage}`);

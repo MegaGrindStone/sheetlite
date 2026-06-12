@@ -2,7 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import type { main } from '$lib/wailsjs/go/models';
+	import { main } from '$lib/wailsjs/go/models';
 	import type { CellEditSession, CellEditSource } from './cellEditSession';
 
 	type ResizeAxis = 'column' | 'row';
@@ -320,7 +320,7 @@
 			}
 
 			let textDecoration = '';
-			if (style.font.underline) {
+			if (style.font.underline && style.font.underline !== main.FontUnderlineStyle.None) {
 				textDecoration += 'underline ';
 			}
 			if (style.font.strikethrough) {
@@ -343,19 +343,22 @@
 
 		if (style.alignment) {
 			const hAlign = style.alignment.horizontal;
-			if (hAlign && hAlign !== 'general') {
+			if (hAlign && hAlign !== main.HorizontalAlignment.General) {
 				let flexAlign = '';
 				let textAlign = '';
-				if (hAlign === 'left') {
+				if (hAlign === main.HorizontalAlignment.Left) {
 					flexAlign = 'flex-start';
 					textAlign = 'left';
-				} else if (hAlign === 'right') {
+				} else if (hAlign === main.HorizontalAlignment.Right) {
 					flexAlign = 'flex-end';
 					textAlign = 'right';
-				} else if (hAlign === 'center' || hAlign === 'centerContinuous') {
+				} else if (
+					hAlign === main.HorizontalAlignment.Center ||
+					hAlign === main.HorizontalAlignment.CenterContinuous
+				) {
 					flexAlign = 'center';
 					textAlign = 'center';
-				} else if (hAlign === 'justify') {
+				} else if (hAlign === main.HorizontalAlignment.Justify) {
 					flexAlign = 'space-between';
 					textAlign = 'justify';
 				}
@@ -368,13 +371,13 @@
 			}
 
 			const vAlign = style.alignment.vertical;
-			if (vAlign && vAlign !== 'general') {
+			if (vAlign && vAlign !== main.VerticalAlignment.General) {
 				let flexVAlign = '';
-				if (vAlign === 'top') {
+				if (vAlign === main.VerticalAlignment.Top) {
 					flexVAlign = 'flex-start';
-				} else if (vAlign === 'center') {
+				} else if (vAlign === main.VerticalAlignment.Center) {
 					flexVAlign = 'center';
-				} else if (vAlign === 'bottom') {
+				} else if (vAlign === main.VerticalAlignment.Bottom) {
 					flexVAlign = 'flex-end';
 				}
 				if (flexVAlign) {
@@ -395,10 +398,12 @@
 				if (bStyle > 0) {
 					const color = border.color || 'currentColor';
 					const width = '1px';
-					if (side === 'left') cssParts.push(`border-left: ${width} solid ${color}`);
-					if (side === 'right') cssParts.push(`border-right: ${width} solid ${color}`);
-					if (side === 'top') cssParts.push(`border-top: ${width} solid ${color}`);
-					if (side === 'bottom') cssParts.push(`border-bottom: ${width} solid ${color}`);
+					if (side === main.BorderSide.Left) cssParts.push(`border-left: ${width} solid ${color}`);
+					if (side === main.BorderSide.Right)
+						cssParts.push(`border-right: ${width} solid ${color}`);
+					if (side === main.BorderSide.Top) cssParts.push(`border-top: ${width} solid ${color}`);
+					if (side === main.BorderSide.Bottom)
+						cssParts.push(`border-bottom: ${width} solid ${color}`);
 				}
 			}
 		}

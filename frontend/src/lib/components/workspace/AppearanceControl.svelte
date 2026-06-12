@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { appearanceOptions, isAppearanceMode, type AppearanceMode } from '$lib/appearance.svelte';
+	import {
+		appearanceOptions,
+		normalizeAppearanceMode,
+		type AppearanceMode
+	} from '$lib/appearance.svelte';
 	import type { main } from '$lib/wailsjs/go/models';
 
 	type Props = {
@@ -9,7 +13,7 @@
 
 	let { appearance, onSetAppearanceMode }: Props = $props();
 
-	const activeMode = $derived(isAppearanceMode(appearance?.mode) ? appearance.mode : 'system');
+	const activeMode = $derived(normalizeAppearanceMode(appearance?.mode));
 
 	function handleModeSelect(mode: AppearanceMode): void {
 		void onSetAppearanceMode?.(mode);
