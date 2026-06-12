@@ -1,0 +1,254 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Validate stable SemVer tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must be stable numeric SemVer tags like v0.1.0." >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    needs: validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Ensure embedded frontend directory exists
+        shell: bash
+        run: |
+          mkdir -p frontend/build
+          touch frontend/build/.gitkeep
+
+      - name: Run Go tests
+        run: go test ./...
+
+  build:
+    name: Build ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.os }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: Linux
+            id: linux
+            os: ubuntu-22.04
+            platform: linux/amd64
+            artifact: sheetlite_linux_amd64.tar.gz
+            nsis: 'false'
+          - name: Windows
+            id: windows
+            os: windows-latest
+            platform: windows/amd64
+            artifact: sheetlite_windows_amd64_installer.exe
+            nsis: 'true'
+          - name: macOS
+            id: macos
+            os: macos-latest
+            platform: darwin/universal
+            artifact: sheetlite_darwin_universal.app.zip
+            nsis: 'false'
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install nsis -y --no-progress
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          if (Test-Path $nsis) {
+            Add-Content -Path $env:GITHUB_PATH -Value $nsis
+          }
+
+      - name: Inject release version into Wails metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("wails.json")
+          data = json.loads(path.read_text())
+          data.setdefault("info", {})["productVersion"] = os.environ["VERSION"]
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Build Wails app
+        uses: dAppServer/wails-build-action@v2.2
+        with:
+          build-name: sheetlite
+          build-platform: ${{ matrix.target.platform }}
+          go-version: '1.26.4'
+          node-version: '24'
+          nsis: ${{ matrix.target.nsis }}
+          package: false
+          wails-version: v2.12.0
+
+      - name: Package Linux artifact
+        if: matrix.target.id == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install -d release-artifacts package/sheetlite_linux_amd64
+          install -m 0755 build/bin/sheetlite package/sheetlite_linux_amd64/sheetlite
+          install -m 0644 README.md LICENSE package/sheetlite_linux_amd64/
+          tar -C package -czf release-artifacts/sheetlite_linux_amd64.tar.gz sheetlite_linux_amd64
+
+      - name: Package Windows artifact
+        if: matrix.target.id == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-artifacts
+          installer="$(find build/bin -maxdepth 1 -iname '*installer.exe' -print -quit)"
+          if [[ -z "${installer}" ]]; then
+            echo "No Windows installer found in build/bin" >&2
+            find build/bin -maxdepth 2 -type f -print >&2 || true
+            exit 1
+          fi
+          cp "${installer}" release-artifacts/sheetlite_windows_amd64_installer.exe
+
+      - name: Package macOS artifact
+        if: matrix.target.id == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-artifacts
+          if [[ ! -d build/bin/sheetlite.app ]]; then
+            echo "No macOS app bundle found at build/bin/sheetlite.app" >&2
+            find build/bin -maxdepth 2 -print >&2 || true
+            exit 1
+          fi
+          ditto -c -k --keepParent build/bin/sheetlite.app release-artifacts/sheetlite_darwin_universal.app.zip
+
+      - name: Verify normalized artifact
+        shell: bash
+        run: test -f "release-artifacts/${{ matrix.target.artifact }}"
+
+      - name: Upload normalized artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target.id }}
+          path: release-artifacts/${{ matrix.target.artifact }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs:
+      - validate
+      - test
+      - build
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download normalized artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Verify release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected=(
+            sheetlite_linux_amd64.tar.gz
+            sheetlite_windows_amd64_installer.exe
+            sheetlite_darwin_universal.app.zip
+          )
+
+          for artifact in "${expected[@]}"; do
+            test -f "release-artifacts/${artifact}"
+          done
+
+      - name: Extract release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          changelog = Path("CHANGELOG.md").read_text()
+          heading = re.compile(rf"^## \[{re.escape(version)}\](?:\s+-\s+.*)?\s*$", re.MULTILINE)
+          match = heading.search(changelog)
+          if not match:
+              print(f"CHANGELOG.md is missing a section for [{version}]", file=sys.stderr)
+              sys.exit(1)
+
+          start = match.end()
+          next_heading = re.search(r"^## \[", changelog[start:], re.MULTILINE)
+          end = start + next_heading.start() if next_heading else len(changelog)
+          notes = changelog[start:end].strip()
+
+          if not notes:
+              print(f"CHANGELOG.md section for [{version}] is empty", file=sys.stderr)
+              sys.exit(1)
+
+          Path("release-notes.md").write_text(notes + "\n")
+          PY
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --clean --release-notes release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

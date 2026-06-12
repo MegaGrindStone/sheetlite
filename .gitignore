@@ -1,6 +1,9 @@
 build/bin
 node_modules
 frontend/build
+/goreleaser-dist/
+/release-artifacts/
+/package/
 
 # AI artifacts
 .todo

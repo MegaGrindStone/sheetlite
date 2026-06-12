@@ -1,0 +1,28 @@
+version: 2
+
+project_name: sheetlite
+dist: goreleaser-dist
+
+builds:
+  - id: skip-go-build
+    skip: true
+
+checksum:
+  name_template: "sheetlite_checksums.txt"
+  algorithm: sha256
+  extra_files:
+    - glob: ./release-artifacts/sheetlite_linux_amd64.tar.gz
+    - glob: ./release-artifacts/sheetlite_windows_amd64_installer.exe
+    - glob: ./release-artifacts/sheetlite_darwin_universal.app.zip
+
+release:
+  github:
+    owner: MegaGrindStone
+    name: sheetlite
+  prerelease: false
+  mode: replace
+  replace_existing_artifacts: true
+  extra_files:
+    - glob: ./release-artifacts/sheetlite_linux_amd64.tar.gz
+    - glob: ./release-artifacts/sheetlite_windows_amd64_installer.exe
+    - glob: ./release-artifacts/sheetlite_darwin_universal.app.zip
