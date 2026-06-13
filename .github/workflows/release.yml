@@ -242,13 +242,13 @@ jobs:
               print(f"CHANGELOG.md section for [{version}] is empty", file=sys.stderr)
               sys.exit(1)
 
-          Path("release-notes.md").write_text(notes + "\n")
+          Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_text(notes + "\n")
           PY
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --release-notes release-notes.md
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
